@@ -1,0 +1,14 @@
+[package]
+name = "tangled_persistence"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Persistence adapter for The Tangled Tree — save/load via serde + RON"
+
+[dependencies]
+tangled_core.workspace = true
+serde.workspace = true
+ron.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
