@@ -1,0 +1,70 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tangled_core",
+    "crates/tangled_bevy",
+    "crates/tangled_persistence",
+    "crates/tangled_app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["jchevalier"]
+license = "MIT"
+repository = "https://github.com/jchevalier/The-Tangled-Tree"
+description = "A Darwinian evolution sandbox simulation — creatures evolve through genetics in a procedurally generated isometric world"
+
+[workspace.dependencies]
+# Domain (no external deps in tangled_core)
+rand = "0.9"
+rand_chacha = "0.9"
+serde = { version = "1", features = ["derive"] }
+
+# Bevy ecosystem
+bevy = { version = "0.15", default-features = false, features = [
+    "bevy_asset",
+    "bevy_winit",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_core_pipeline",
+    "bevy_state",
+    "bevy_text",
+    "bevy_ui",
+    "default_font",
+    "x11",
+    "wayland",
+    "png",
+] }
+bevy_ecs_tilemap = "0.15"
+bevy_egui = "0.31"
+egui_plot = "0.31"
+
+# Procedural generation
+noise = "0.9"
+
+# Serialization
+ron = "0.8"
+serde_json = "1"
+
+# Performance
+rayon = "1.10"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Internal crates
+tangled_core = { path = "crates/tangled_core" }
+tangled_bevy = { path = "crates/tangled_bevy" }
+tangled_persistence = { path = "crates/tangled_persistence" }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
