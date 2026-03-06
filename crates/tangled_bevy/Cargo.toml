@@ -1,0 +1,17 @@
+[package]
+name = "tangled_bevy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Bevy engine adapter for The Tangled Tree — rendering, input, tilemap, UI"
+
+[dependencies]
+tangled_core.workspace = true
+bevy.workspace = true
+bevy_ecs_tilemap.workspace = true
+bevy_egui.workspace = true
+egui_plot.workspace = true
+noise.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
