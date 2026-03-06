@@ -1,0 +1,13 @@
+[package]
+name = "tangled_app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Application entry point for The Tangled Tree — wires adapters and launches the simulation"
+
+[dependencies]
+tangled_core.workspace = true
+tangled_bevy.workspace = true
+tangled_persistence.workspace = true
+bevy.workspace = true
