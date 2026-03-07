@@ -14,8 +14,8 @@ pub struct SimulationPlugin;
 /// Seconds between each simulation tick.
 const TICK_INTERVAL: f64 = 0.15;
 
-/// Food regeneration rate per tick.
-const FOOD_REGEN_RATE: f64 = 0.03;
+/// Grass regeneration rate per tick.
+const GRASS_REGEN_RATE: f64 = 0.03;
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
@@ -73,7 +73,7 @@ fn simulation_tick_system(
         CreatureConfig::default(),
         MutationConfig::default(),
         current_tick,
-        FOOD_REGEN_RATE,
+        GRASS_REGEN_RATE,
     );
 
     state.0 = new_state;

@@ -1,7 +1,6 @@
 //! Main Tangled Tree plugin — wires all sub-plugins together.
 
 use bevy::prelude::*;
-use bevy_ecs_tilemap::TilemapPlugin;
 
 use crate::adapters::renderer::TilemapRendererPlugin;
 use crate::adapters::renderer::creature_renderer::{CreatureRendererPlugin, WorldConfigResource};
@@ -40,8 +39,7 @@ impl Plugin for TangledPlugin {
         app.insert_resource(WorldConfigResource(self.world_config.clone()));
 
         // Register sub-plugins
-        app.add_plugins(TilemapPlugin)
-            .add_plugins(TilemapRendererPlugin)
+        app.add_plugins(TilemapRendererPlugin)
             .add_plugins(CreatureRendererPlugin)
             .add_plugins(SimulationPlugin)
             .add_plugins(StatsHudPlugin)
