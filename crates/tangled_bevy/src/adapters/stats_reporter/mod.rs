@@ -7,7 +7,9 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, egui};
 use tangled_core::domain::simulation::SimulationEvent;
+use tangled_core::domain::world::FruitTreeState;
 
+use crate::adapters::renderer::tilemap_renderer::WorldMapResource;
 use crate::plugins::simulation_plugin::{SimulationRunning, SimulationStateResource};
 
 /// Maximum number of events retained in the log.
@@ -78,10 +80,25 @@ fn collect_events(state: Option<Res<SimulationStateResource>>, mut log: ResMut<E
 fn stats_hud_system(
     mut contexts: EguiContexts,
     state: Option<Res<SimulationStateResource>>,
+    world_map: Option<Res<WorldMapResource>>,
     mut running: ResMut<SimulationRunning>,
 ) {
     let Some(state) = state else { return };
     let state = &state.0;
+
+    // Compute food stats from the world map
+    let (total_grass, fruiting_trees, total_trees) = if let Some(ref wm) = world_map {
+        let grass: f64 = wm.0.iter().map(|(_, t)| t.grass).sum();
+        let fruiting =
+            wm.0.trees()
+                .iter()
+                .filter(|t| t.state == FruitTreeState::Fruiting)
+                .count();
+        let total = wm.0.trees().len();
+        (grass, fruiting, total)
+    } else {
+        (0.0, 0, 0)
+    };
 
     egui::Window::new("Simulation")
         .default_pos([10.0, 10.0])
@@ -134,6 +151,18 @@ fn stats_hud_system(
 
                     ui.label("Old age:");
                     ui.label(format!("⊕ {}", state.deaths_by_age));
+                    ui.end_row();
+
+                    ui.separator();
+                    ui.separator();
+                    ui.end_row();
+
+                    ui.label("Grass:");
+                    ui.label(format!("{:.1}", total_grass));
+                    ui.end_row();
+
+                    ui.label("Fruits:");
+                    ui.label(format!("{} / {}", fruiting_trees, total_trees));
                     ui.end_row();
                 });
 
