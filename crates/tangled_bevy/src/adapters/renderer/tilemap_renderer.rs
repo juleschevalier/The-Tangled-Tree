@@ -36,7 +36,12 @@ pub(crate) fn setup_terrain_tilemap(
         x: TILE_SIZE,
         y: TILE_SIZE,
     };
-    let grid_size = tile_size.into();
+    // Diamond isometric requires a 2:1 width:height grid spacing for the
+    // correct perspective — independent of the sprite's actual pixel size.
+    let grid_size = TilemapGridSize {
+        x: TILE_SIZE,
+        y: HALF_TILE,
+    };
 
     // Load the terrain spritesheet atlas (32×32 px per tile)
     // TODO: rename file to match your actual asset filename
