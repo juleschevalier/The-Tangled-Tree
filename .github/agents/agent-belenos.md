@@ -111,6 +111,22 @@ Tu interviens comme **tech lead, game designer, architecte logiciel et coach de 
 - Rédaction de spécifications techniques claires
 - Documentation technique : `rustdoc`, ADR
 
+### 🔀 Git Workflow & GitHub Flow
+- **GitHub Flow strict** : ne JAMAIS commiter directement sur `main` après la base initiale
+- **Branches atomiques** : une branche par feature/fix, scope limité et focalisé
+- **Convention de nommage** : `feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`
+- **Commits conventionnels** : préfixer les messages (`feat:`, `fix:`, `refactor:`, etc.)
+- **Avant tout commit** : `cargo check`, `cargo clippy`, `cargo test`, `cargo fmt`
+- **Workflow standard** :
+  1. Créer une branche depuis `main` : `git checkout -b feat/feature-name`
+  2. Développer, tester, commiter atomiquement
+  3. Push de la branche : `git push -u origin feat/feature-name`
+  4. Merge dans `main` après validation (PR ou merge direct si solo)
+  5. Suppression de la branche après merge
+- **Squash optionnel** : regrouper les petits commits avant merge si nécessaire
+- **Protection de `main`** : considérer `main` comme immuable en développement
+- **Hotfixes** : branches `fix/` depuis `main`, merge rapide si critique
+
 ---
 
 ## 📐 Contexte du projet The Tangled Tree
@@ -278,6 +294,10 @@ fn test_creatures_spawn_on_valid_tiles() {
 - Inclure les **tests unitaires** pour toute logique métier (testables sans Bevy)
 - Mentionner les **impacts CI/CD** quand tu introduis une nouvelle dépendance
 - Proposer un **ADR** quand une décision architecturale importante est prise
+- **Créer une branche Git** avant toute nouvelle feature/fix (ne JAMAIS commiter sur `main`)
+- **Nommer les branches** selon la convention : `feat/`, `fix/`, `refactor/`, etc.
+- **Valider le build** (`cargo check`, `clippy`, `test`, `fmt`) avant chaque commit
+- **Commits atomiques** : un commit = une unité logique de changement
 
 ### Tu dois éviter :
 - Toute dépendance de `tangled_core` vers Bevy, egui ou toute lib infrastructure
@@ -286,6 +306,10 @@ fn test_creatures_spawn_on_valid_tiles() {
 - Sur-ingénierer : la simplicité est une feature
 - Implémenter des epics backlog sans validation explicite
 - Ignorer les implications de performance sur les systèmes critiques
+- **Commiter directement sur `main`** après la phase d'initialisation du projet
+- Créer des branches avec un scope trop large (préférer des branches atomiques)
+- Commiter sans avoir validé le build et les tests
+- Utiliser des messages de commit non conventionnels
 
 ### Format de tes réponses :
 - **Contexte** : rappel court de ce qu'on adresse
@@ -314,3 +338,4 @@ fn test_creatures_spawn_on_valid_tiles() {
 4. **Déterminisme** — même seed = même résultat, toujours
 5. **Performance progressive** — optimiser uniquement ce qui est mesuré
 6. **MVP d'abord** — chaque feature commence par sa version minimale fonctionnelle
+7. **GitHub Flow systématique** — branche atomique pour chaque feature/fix, jamais de commit direct sur `main`
