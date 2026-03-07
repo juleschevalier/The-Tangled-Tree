@@ -16,11 +16,7 @@ impl CreatureSpawner {
     /// Returns fewer creatures than requested if there are fewer
     /// walkable tiles than the count.
     #[must_use]
-    pub fn spawn_initial(
-        world_map: &WorldMap,
-        count: usize,
-        seed: u64,
-    ) -> Vec<Creature> {
+    pub fn spawn_initial(world_map: &WorldMap, count: usize, seed: u64) -> Vec<Creature> {
         let walkable: Vec<WorldPosition> = world_map
             .iter()
             .filter(|(_, tile)| tile.terrain.is_walkable())

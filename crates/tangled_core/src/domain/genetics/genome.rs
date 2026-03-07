@@ -23,7 +23,9 @@ impl MutationConfig {
 
 impl Default for MutationConfig {
     fn default() -> Self {
-        Self { mutation_rate: 0.02 }
+        Self {
+            mutation_rate: 0.02,
+        }
     }
 }
 
@@ -100,8 +102,10 @@ impl Genome {
             return a;
         }
 
-        if matches!((a, b), (Diet::Herbivore, Diet::Carnivore) | (Diet::Carnivore, Diet::Herbivore))
-        {
+        if matches!(
+            (a, b),
+            (Diet::Herbivore, Diet::Carnivore) | (Diet::Carnivore, Diet::Herbivore)
+        ) {
             return Diet::Omnivore;
         }
 

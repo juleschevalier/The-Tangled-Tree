@@ -5,9 +5,11 @@ use bevy_ecs_tilemap::TilemapPlugin;
 
 use crate::adapters::renderer::TilemapRendererPlugin;
 use crate::adapters::renderer::creature_renderer::{CreatureRendererPlugin, WorldConfigResource};
-use crate::adapters::world_generator::PerlinWorldGenerator;
 use crate::adapters::renderer::tilemap_renderer::WorldMapResource;
+use crate::adapters::stats_reporter::StatsHudPlugin;
+use crate::adapters::world_generator::PerlinWorldGenerator;
 use crate::plugins::camera::CameraPlugin;
+use crate::plugins::simulation_plugin::SimulationPlugin;
 use tangled_core::domain::world::WorldConfig;
 use tangled_core::ports::outbound::WorldGenerator;
 
@@ -41,6 +43,8 @@ impl Plugin for TangledPlugin {
         app.add_plugins(TilemapPlugin)
             .add_plugins(TilemapRendererPlugin)
             .add_plugins(CreatureRendererPlugin)
+            .add_plugins(SimulationPlugin)
+            .add_plugins(StatsHudPlugin)
             .add_plugins(CameraPlugin);
     }
 }
