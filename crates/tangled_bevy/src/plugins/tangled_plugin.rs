@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_ecs_tilemap::TilemapPlugin;
 
 use crate::adapters::renderer::TilemapRendererPlugin;
+use crate::adapters::renderer::creature_renderer::{CreatureRendererPlugin, WorldConfigResource};
 use crate::adapters::world_generator::PerlinWorldGenerator;
 use crate::adapters::renderer::tilemap_renderer::WorldMapResource;
 use crate::plugins::camera::CameraPlugin;
@@ -32,12 +33,14 @@ impl Plugin for TangledPlugin {
             self.world_config.seed
         );
 
-        // Insert as Bevy resource
+        // Insert as Bevy resources
         app.insert_resource(WorldMapResource(world_map));
+        app.insert_resource(WorldConfigResource(self.world_config.clone()));
 
         // Register sub-plugins
         app.add_plugins(TilemapPlugin)
             .add_plugins(TilemapRendererPlugin)
+            .add_plugins(CreatureRendererPlugin)
             .add_plugins(CameraPlugin);
     }
 }

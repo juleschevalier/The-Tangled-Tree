@@ -5,5 +5,7 @@
 //! through behaviors driven by their genes.
 
 mod creature;
+mod spawner;
 
 pub use creature::{Creature, CreatureConfig, CreatureId, VitalStatus};
+pub use spawner::CreatureSpawner;

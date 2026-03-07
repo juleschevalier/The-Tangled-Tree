@@ -22,7 +22,7 @@ impl Plugin for TilemapRendererPlugin {
 pub struct WorldMapResource(pub WorldMap);
 
 /// System that creates the tilemap from the WorldMap resource.
-fn setup_terrain_tilemap(
+pub(crate) fn setup_terrain_tilemap(
     mut commands: Commands,
     world_map: Res<WorldMapResource>,
     asset_server: Res<AssetServer>,
