@@ -4,6 +4,8 @@ use crate::domain::creatures::{Creature, CreatureConfig, CreatureId};
 use crate::domain::genetics::{DeterministicRng, Genome, MutationConfig};
 use crate::domain::world::WorldMap;
 
+use super::movement;
+
 /// Snapshot of population metrics after a tick.
 #[derive(Debug, Clone, Default)]
 pub struct SimulationState {
@@ -35,7 +37,10 @@ impl SimulationTick {
     ) -> SimulationState {
         let alive_before = creatures.iter().filter(|c| c.is_alive()).count();
 
-        // 1. Feed — each living creature tries to eat from its tile
+        // 1. Move — creatures decide where to go
+        movement::move_all_creatures(creatures, world_map, current_tick);
+
+        // 2. Feed — each living creature tries to eat from its tile
         for creature in creatures.iter_mut() {
             if !creature.is_alive() {
                 continue;
@@ -46,12 +51,12 @@ impl SimulationTick {
             }
         }
 
-        // 2. Tick — lifecycle step (age, hunger, energy, death)
+        // 3. Tick — lifecycle step (age, hunger, energy, death)
         for creature in creatures.iter_mut() {
             creature.tick(creature_config);
         }
 
-        // 3. Reproduce — find eligible pairs, create offspring
+        // 4. Reproduce — find eligible pairs, create offspring
         let births = Self::reproduce(
             creatures,
             world_map,
@@ -60,7 +65,7 @@ impl SimulationTick {
             current_tick,
         );
 
-        // 4. Regenerate world food
+        // 5. Regenerate world food
         world_map.regenerate_all_food(food_regen_rate);
 
         // Compute metrics
