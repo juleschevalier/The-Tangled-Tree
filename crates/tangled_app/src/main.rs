@@ -5,8 +5,13 @@
 //! (`tangled_persistence`), then launches the simulation.
 
 use bevy::prelude::*;
+use tangled_bevy::plugins::TangledPlugin;
+use tangled_core::domain::world::WorldConfig;
 
 fn main() {
+    // World generation config — change seed for a different world
+    let world_config = WorldConfig::with_seed(42);
+
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -16,10 +21,6 @@ fn main() {
             }),
             ..default()
         }))
-        .add_systems(Startup, setup)
+        .add_plugins(TangledPlugin { world_config })
         .run();
-}
-
-fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d);
 }
