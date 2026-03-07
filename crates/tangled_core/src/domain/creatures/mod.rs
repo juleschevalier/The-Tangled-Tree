@@ -7,5 +7,5 @@
 mod creature;
 mod spawner;
 
-pub use creature::{Creature, CreatureConfig, CreatureId, VitalStatus};
+pub use creature::{Creature, CreatureConfig, CreatureId, DeathCause, VitalStatus};
 pub use spawner::CreatureSpawner;

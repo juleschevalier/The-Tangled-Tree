@@ -14,6 +14,17 @@ pub enum VitalStatus {
     Dead,
 }
 
+/// Reason why a creature died.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeathCause {
+    /// Died from starvation (hunger increased too much).
+    Starvation,
+    /// Died from energy exhaustion (spent all energy).
+    Exhaustion,
+    /// Died from old age (reached max age).
+    Age,
+}
+
 /// Runtime balancing constants for creature lifecycle.
 #[derive(Debug, Clone, Copy)]
 pub struct CreatureConfig {
@@ -52,6 +63,8 @@ pub struct Creature {
     pub energy: f32,
     pub hunger: f32,
     status: VitalStatus,
+    /// Reason for death (if dead).
+    pub death_cause: Option<DeathCause>,
 }
 
 impl Creature {
@@ -66,6 +79,7 @@ impl Creature {
             energy: 100.0,
             hunger: 0.0,
             status: VitalStatus::Alive,
+            death_cause: None,
         }
     }
 
@@ -98,9 +112,18 @@ impl Creature {
             self.energy -= config.starvation_damage_per_tick;
         }
 
-        if self.energy <= 0.0 || self.age_ticks >= config.max_age_ticks {
+        // Determine death cause (in order of precedence: age, exhaustion, starvation)
+        if self.age_ticks >= config.max_age_ticks {
             self.energy = self.energy.max(0.0);
             self.status = VitalStatus::Dead;
+            self.death_cause = Some(DeathCause::Age);
+        } else if self.energy <= 0.0 {
+            self.energy = 0.0;
+            self.status = VitalStatus::Dead;
+            self.death_cause = Some(DeathCause::Exhaustion);
+        } else if self.hunger >= config.starvation_hunger_threshold {
+            // Creature is at max starvation but still alive (will die next tick if no food)
+            self.death_cause = Some(DeathCause::Starvation);
         }
     }
 

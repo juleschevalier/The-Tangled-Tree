@@ -1,6 +1,6 @@
 //! Core simulation tick logic.
 
-use crate::domain::creatures::{Creature, CreatureConfig, CreatureId};
+use crate::domain::creatures::{Creature, CreatureConfig, CreatureId, DeathCause};
 use crate::domain::genetics::{DeterministicRng, Genome, MutationConfig};
 use crate::domain::world::WorldMap;
 
@@ -11,11 +11,12 @@ use super::movement;
 pub enum SimulationEvent {
     /// A creature was born.
     Birth { id: CreatureId, tick: u64 },
-    /// A creature died, with the age at death.
+    /// A creature died, with the age at death and cause.
     Death {
         id: CreatureId,
         tick: u64,
         age_ticks: u64,
+        cause: DeathCause,
     },
 }
 
@@ -27,6 +28,9 @@ pub struct SimulationState {
     pub dead_count: usize,
     pub births_this_tick: usize,
     pub deaths_this_tick: usize,
+    pub deaths_by_starvation: usize,
+    pub deaths_by_exhaustion: usize,
+    pub deaths_by_age: usize,
     /// Detailed events for this tick (births + deaths).
     pub events: Vec<SimulationEvent>,
 }
@@ -80,11 +84,15 @@ impl SimulationTick {
 
         // Detect deaths that happened this tick
         for creature in creatures.iter() {
-            if !creature.is_alive() && alive_before.contains(&creature.id) {
+            if !creature.is_alive()
+                && alive_before.contains(&creature.id)
+                && let Some(cause) = creature.death_cause
+            {
                 events.push(SimulationEvent::Death {
                     id: creature.id,
                     tick: current_tick,
                     age_ticks: creature.age_ticks,
+                    cause,
                 });
             }
         }
@@ -118,6 +126,20 @@ impl SimulationTick {
             .count();
         let births_count = births.len();
 
+        // Count deaths by cause
+        let mut deaths_by_starvation = 0;
+        let mut deaths_by_exhaustion = 0;
+        let mut deaths_by_age = 0;
+        for event in &events {
+            if let SimulationEvent::Death { cause, .. } = event {
+                match cause {
+                    DeathCause::Starvation => deaths_by_starvation += 1,
+                    DeathCause::Exhaustion => deaths_by_exhaustion += 1,
+                    DeathCause::Age => deaths_by_age += 1,
+                }
+            }
+        }
+
         // Add offspring to the population
         creatures.extend(births);
 
@@ -127,6 +149,9 @@ impl SimulationTick {
             dead_count: total_dead,
             births_this_tick: births_count,
             deaths_this_tick,
+            deaths_by_starvation,
+            deaths_by_exhaustion,
+            deaths_by_age,
             events,
         }
     }
