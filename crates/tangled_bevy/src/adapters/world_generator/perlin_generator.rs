@@ -9,26 +9,29 @@ use tangled_core::ports::outbound::WorldGenerator;
 /// Maps noise values to terrain types based on configurable thresholds:
 /// - Below `water_level` → Water
 /// - Above `rock_level` → Rock
-/// - In between → Grass (with Sand near water edges)
+/// - In between → Dirt (with grass determined by a second noise octave)
 pub struct PerlinWorldGenerator {
     /// Scale factor for noise sampling (lower = smoother terrain).
     pub scale: f64,
-    /// Sand margin: how far above water_level sand extends.
-    pub sand_margin: f64,
+    /// Scale factor for the grass noise layer.
+    pub grass_scale: f64,
 }
 
 impl Default for PerlinWorldGenerator {
     fn default() -> Self {
         Self {
             scale: 0.05,
-            sand_margin: 0.08,
+            grass_scale: 0.05,
         }
     }
 }
 
 impl WorldGenerator for PerlinWorldGenerator {
     fn generate(&self, config: &WorldConfig) -> WorldMap {
-        let perlin = Perlin::new(config.seed as u32);
+        let terrain_noise = Perlin::new(config.seed as u32);
+        // Second noise layer with different seed for grass distribution
+        let grass_noise = Perlin::new(config.seed.wrapping_add(12345) as u32);
+
         let mut tiles = Vec::with_capacity((config.width * config.height) as usize);
 
         for y in 0..config.height {
@@ -37,12 +40,27 @@ impl WorldGenerator for PerlinWorldGenerator {
                 let ny = y as f64 * self.scale;
 
                 // Perlin returns values in [-1, 1], normalize to [0, 1]
-                let raw = perlin.get([nx, ny]);
+                let raw = terrain_noise.get([nx, ny]);
                 let elevation = (raw + 1.0) / 2.0;
 
-                let terrain = classify_terrain(elevation, config, self.sand_margin);
+                let terrain = classify_terrain(elevation, config);
 
-                tiles.push(Tile::new(terrain, elevation));
+                // Grass level: use a second noise octave, normalized to [0, 1]
+                let tile = if terrain.can_grow_grass() {
+                    let gx = x as f64 * self.grass_scale;
+                    let gy = y as f64 * self.grass_scale;
+                    let grass_raw = grass_noise.get([gx, gy]);
+                    let mut grass = ((grass_raw + 1.0) / 2.0).clamp(0.0, 1.0);
+                    // Apply threshold: sparse grass, less abundant
+                    if grass < 0.35 {
+                        grass = 0.0;
+                    }
+                    Tile::with_grass(terrain, elevation, grass)
+                } else {
+                    Tile::new(terrain, elevation)
+                };
+
+                tiles.push(tile);
             }
         }
 
@@ -51,15 +69,13 @@ impl WorldGenerator for PerlinWorldGenerator {
 }
 
 /// Classify a normalized elevation value into a terrain type.
-fn classify_terrain(elevation: f64, config: &WorldConfig, sand_margin: f64) -> Terrain {
+fn classify_terrain(elevation: f64, config: &WorldConfig) -> Terrain {
     if elevation < config.water_level {
         Terrain::Water
-    } else if elevation < config.water_level + sand_margin {
-        Terrain::Sand
     } else if elevation > config.rock_level {
         Terrain::Rock
     } else {
-        Terrain::Grass
+        Terrain::Dirt
     }
 }
 
@@ -83,11 +99,11 @@ mod tests {
         let map1 = generator.generate(&config);
         let map2 = generator.generate(&config);
 
-        // Compare all tiles
         for (pos1, tile1) in map1.iter() {
             let tile2 = map2.get(pos1).unwrap();
             assert_eq!(tile1.terrain, tile2.terrain);
             assert_eq!(tile1.elevation, tile2.elevation);
+            assert!((tile1.grass - tile2.grass).abs() < f64::EPSILON);
         }
     }
 
@@ -97,7 +113,6 @@ mod tests {
         let map1 = generator.generate(&WorldConfig::with_seed(1));
         let map2 = generator.generate(&WorldConfig::with_seed(999));
 
-        // At least some tiles should differ
         let different = map1
             .iter()
             .zip(map2.iter())
@@ -115,8 +130,21 @@ mod tests {
         let config = WorldConfig::with_seed(42);
         let map = generator.generate(&config);
 
-        assert!(map.count_terrain(Terrain::Grass) > 0, "Should have grass");
+        assert!(map.count_terrain(Terrain::Dirt) > 0, "Should have dirt");
         assert!(map.count_terrain(Terrain::Water) > 0, "Should have water");
+    }
+
+    #[test]
+    fn dirt_tiles_have_grass() {
+        let generator = PerlinWorldGenerator::default();
+        let config = WorldConfig::with_seed(42);
+        let map = generator.generate(&config);
+
+        let dirt_with_grass = map
+            .iter()
+            .filter(|(_, t)| t.terrain == Terrain::Dirt && t.grass > 0.0)
+            .count();
+        assert!(dirt_with_grass > 0, "Some dirt tiles should have grass");
     }
 
     #[test]
@@ -126,9 +154,8 @@ mod tests {
             rock_level: 0.8,
             ..WorldConfig::default()
         };
-        assert_eq!(classify_terrain(0.1, &config, 0.05), Terrain::Water);
-        assert_eq!(classify_terrain(0.32, &config, 0.05), Terrain::Sand);
-        assert_eq!(classify_terrain(0.5, &config, 0.05), Terrain::Grass);
-        assert_eq!(classify_terrain(0.9, &config, 0.05), Terrain::Rock);
+        assert_eq!(classify_terrain(0.1, &config), Terrain::Water);
+        assert_eq!(classify_terrain(0.5, &config), Terrain::Dirt);
+        assert_eq!(classify_terrain(0.9, &config), Terrain::Rock);
     }
 }

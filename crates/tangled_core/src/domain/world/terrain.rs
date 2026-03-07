@@ -2,18 +2,16 @@
 
 /// The terrain type of a world tile.
 ///
-/// Each variant represents a distinct biome/surface type that affects
-/// creature movement, survival, and resource availability.
+/// Each variant represents a distinct surface type that affects
+/// creature movement and whether grass (food) can grow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Terrain {
-    /// Fertile land — creatures can walk, food grows here.
-    Grass,
-    /// Impassable water — blocks movement, no food.
+    /// Dirt — walkable, grass can grow here (the primary fertile terrain).
+    Dirt,
+    /// Impassable water — blocks movement, no grass.
     Water,
-    /// Rocky terrain — passable but slow, no food.
+    /// Rocky terrain — walkable but slow, grass cannot grow.
     Rock,
-    /// Sandy terrain — passable, scarce food.
-    Sand,
 }
 
 impl Terrain {
@@ -21,19 +19,23 @@ impl Terrain {
     #[must_use]
     pub const fn is_walkable(self) -> bool {
         match self {
-            Self::Grass | Self::Rock | Self::Sand => true,
+            Self::Dirt | Self::Rock => true,
             Self::Water => false,
         }
     }
 
-    /// Base food growth rate on this terrain (0.0 = none, 1.0 = maximum).
+    /// Whether grass (food) can grow on this terrain.
     #[must_use]
-    pub const fn food_growth_rate(self) -> f64 {
+    pub const fn can_grow_grass(self) -> bool {
+        matches!(self, Self::Dirt)
+    }
+
+    /// Maximum grass level on this terrain (0.0 = none, 1.0 = lush).
+    #[must_use]
+    pub const fn max_grass(self) -> f64 {
         match self {
-            Self::Grass => 1.0,
-            Self::Sand => 0.2,
-            Self::Rock => 0.0,
-            Self::Water => 0.0,
+            Self::Dirt => 1.0,
+            Self::Rock | Self::Water => 0.0,
         }
     }
 
@@ -41,8 +43,7 @@ impl Terrain {
     #[must_use]
     pub const fn movement_multiplier(self) -> f64 {
         match self {
-            Self::Grass => 1.0,
-            Self::Sand => 0.8,
+            Self::Dirt => 1.0,
             Self::Rock => 0.5,
             Self::Water => 0.0,
         }
@@ -56,25 +57,21 @@ mod tests {
     #[test]
     fn water_is_not_walkable() {
         assert!(!Terrain::Water.is_walkable());
+        assert!(!Terrain::Water.can_grow_grass());
     }
 
     #[test]
-    fn grass_is_walkable_with_full_food() {
-        assert!(Terrain::Grass.is_walkable());
-        assert_eq!(Terrain::Grass.food_growth_rate(), 1.0);
+    fn dirt_is_walkable_and_fertile() {
+        assert!(Terrain::Dirt.is_walkable());
+        assert!(Terrain::Dirt.can_grow_grass());
+        assert_eq!(Terrain::Dirt.max_grass(), 1.0);
     }
 
     #[test]
-    fn rock_is_walkable_but_slow() {
+    fn rock_is_walkable_but_barren() {
         assert!(Terrain::Rock.is_walkable());
+        assert!(!Terrain::Rock.can_grow_grass());
+        assert_eq!(Terrain::Rock.max_grass(), 0.0);
         assert_eq!(Terrain::Rock.movement_multiplier(), 0.5);
-        assert_eq!(Terrain::Rock.food_growth_rate(), 0.0);
-    }
-
-    #[test]
-    fn sand_has_partial_food_and_speed() {
-        assert!(Terrain::Sand.is_walkable());
-        assert!(Terrain::Sand.food_growth_rate() > 0.0);
-        assert!(Terrain::Sand.movement_multiplier() < 1.0);
     }
 }

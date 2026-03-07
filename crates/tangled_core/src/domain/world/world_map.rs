@@ -35,9 +35,11 @@ impl WorldMap {
     }
 
     /// Create a flat world filled with a single terrain type.
+    /// Fertile tiles start with full grass.
     #[must_use]
     pub fn flat(width: u32, height: u32, terrain: Terrain) -> Self {
-        let tiles = vec![Tile::new(terrain, 0.5); (width * height) as usize];
+        let grass = terrain.max_grass();
+        let tiles = vec![Tile::with_grass(terrain, 0.5, grass); (width * height) as usize];
         Self {
             width,
             height,
@@ -127,10 +129,10 @@ impl WorldMap {
         self.tiles.iter().filter(|t| t.terrain == terrain).count()
     }
 
-    /// Regenerate food on all tiles.
-    pub fn regenerate_all_food(&mut self, rate: f64) {
+    /// Regenerate grass on all fertile tiles.
+    pub fn regenerate_all_grass(&mut self, rate: f64) {
         for tile in &mut self.tiles {
-            tile.regenerate_food(rate);
+            tile.regenerate_grass(rate);
         }
     }
 
@@ -146,7 +148,7 @@ mod tests {
 
     #[test]
     fn flat_world_has_correct_dimensions() {
-        let map = WorldMap::flat(10, 8, Terrain::Grass);
+        let map = WorldMap::flat(10, 8, Terrain::Dirt);
         assert_eq!(map.width(), 10);
         assert_eq!(map.height(), 8);
         assert_eq!(map.tile_count(), 80);
@@ -154,21 +156,21 @@ mod tests {
 
     #[test]
     fn get_returns_correct_tile() {
-        let map = WorldMap::flat(5, 5, Terrain::Sand);
+        let map = WorldMap::flat(5, 5, Terrain::Rock);
         let tile = map.get(WorldPosition::new(2, 3)).unwrap();
-        assert_eq!(tile.terrain, Terrain::Sand);
+        assert_eq!(tile.terrain, Terrain::Rock);
     }
 
     #[test]
     fn get_out_of_bounds_returns_none() {
-        let map = WorldMap::flat(5, 5, Terrain::Grass);
+        let map = WorldMap::flat(5, 5, Terrain::Dirt);
         assert!(map.get(WorldPosition::new(5, 0)).is_none());
         assert!(map.get(WorldPosition::new(0, 5)).is_none());
     }
 
     #[test]
     fn in_bounds_check() {
-        let map = WorldMap::flat(10, 10, Terrain::Grass);
+        let map = WorldMap::flat(10, 10, Terrain::Dirt);
         assert!(map.in_bounds(WorldPosition::new(0, 0)));
         assert!(map.in_bounds(WorldPosition::new(9, 9)));
         assert!(!map.in_bounds(WorldPosition::new(10, 0)));
@@ -178,15 +180,15 @@ mod tests {
     fn count_terrain_on_flat_map() {
         let map = WorldMap::flat(4, 4, Terrain::Water);
         assert_eq!(map.count_terrain(Terrain::Water), 16);
-        assert_eq!(map.count_terrain(Terrain::Grass), 0);
+        assert_eq!(map.count_terrain(Terrain::Dirt), 0);
     }
 
     #[test]
     fn walkable_neighbors_avoids_water() {
-        // Create a 3x3 map: center is grass, surround with water except east
+        // Create a 3x3 map: center is dirt, surround with water except east
         let mut tiles = vec![Tile::new(Terrain::Water, 0.0); 9];
-        tiles[4] = Tile::new(Terrain::Grass, 0.5); // center (1,1)
-        tiles[5] = Tile::new(Terrain::Grass, 0.5); // east (2,1)
+        tiles[4] = Tile::new(Terrain::Dirt, 0.5); // center (1,1)
+        tiles[5] = Tile::new(Terrain::Dirt, 0.5); // east (2,1)
         let map = WorldMap::new(3, 3, tiles);
 
         let walkable = map.walkable_neighbors(WorldPosition::new(1, 1));
@@ -196,21 +198,21 @@ mod tests {
 
     #[test]
     fn iter_covers_all_tiles() {
-        let map = WorldMap::flat(3, 4, Terrain::Grass);
+        let map = WorldMap::flat(3, 4, Terrain::Dirt);
         assert_eq!(map.iter().count(), 12);
     }
 
     #[test]
-    fn regenerate_all_food_works() {
-        let mut map = WorldMap::flat(2, 2, Terrain::Grass);
-        // Drain all food
+    fn regenerate_all_grass_works() {
+        let mut map = WorldMap::flat(2, 2, Terrain::Dirt);
+        // Drain all grass
         for (_, tile) in map.iter_mut() {
-            tile.food = 0.0;
+            tile.grass = 0.0;
         }
-        map.regenerate_all_food(1.0);
+        map.regenerate_all_grass(1.0);
         // All tiles should be back to max
         for (_, tile) in map.iter() {
-            assert_eq!(tile.food, 1.0);
+            assert_eq!(tile.grass, 1.0);
         }
     }
 

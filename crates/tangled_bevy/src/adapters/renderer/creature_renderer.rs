@@ -1,13 +1,18 @@
 //! Creature renderer — spawns Bevy entities for domain creatures on the isometric map.
+//!
+//! Creatures are rendered as red circles positioned using the diamond iso projection.
 
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-use bevy_ecs_tilemap::prelude::*;
+use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use tangled_core::domain::creatures::{Creature, CreatureId, CreatureSpawner};
 use tangled_core::domain::world::WorldConfig;
 
-use super::tilemap_renderer::{WorldMapResource, setup_terrain_tilemap};
+use super::tilemap_renderer::{
+    TilemapInfo, WorldMapResource, diamond_tile_to_world, setup_terrain_sprites,
+};
 
 /// Plugin that handles spawning and rendering creatures.
 pub struct CreatureRendererPlugin;
@@ -18,7 +23,7 @@ impl Plugin for CreatureRendererPlugin {
             Startup,
             spawn_initial_creatures
                 .run_if(resource_exists::<WorldMapResource>)
-                .after(setup_terrain_tilemap),
+                .after(setup_terrain_sprites),
         )
         .add_systems(
             Update,
@@ -43,20 +48,23 @@ pub struct PopulationResource {
 #[derive(Resource)]
 pub struct WorldConfigResource(pub WorldConfig);
 
+/// Resource holding the shared red circle texture handle.
+#[derive(Resource)]
+struct CreatureTextureHandle(Handle<Image>);
+
 /// Number of creatures to spawn initially.
-const INITIAL_POPULATION: usize = 20;
+const INITIAL_POPULATION: usize = 40;
+
+/// Creature circle diameter in pixels.
+const CREATURE_SIZE: f32 = 10.0;
 
 /// System: spawn domain creatures then create Bevy sprite entities.
-///
-/// Queries the actual tilemap entity's [`TilemapGridSize`] and [`Transform`] so
-/// creature world positions are computed with the exact same Diamond basis as
-/// `bevy_ecs_tilemap` uses internally.
 fn spawn_initial_creatures(
     mut commands: Commands,
     world_map: Res<WorldMapResource>,
     world_config: Res<WorldConfigResource>,
-    asset_server: Res<AssetServer>,
-    tilemap_query: Query<(&TilemapGridSize, &Transform), With<TilemapSize>>,
+    tilemap_info: Res<TilemapInfo>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let creatures = CreatureSpawner::spawn_initial(
         &world_map.0,
@@ -64,29 +72,22 @@ fn spawn_initial_creatures(
         world_config.0.seed.wrapping_add(0xCAFE),
     );
 
-    let (grid_size, tilemap_transform) = match tilemap_query.get_single() {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Could not find tilemap entity for creature projection: {e}");
-            return;
-        }
-    };
-    let tilemap_offset = tilemap_transform.translation.truncate();
+    let grid_size = tilemap_info.grid_size;
+    let offset = tilemap_info.offset;
 
-    let texture: Handle<Image> = asset_server.load("sprites/creature.png");
+    // Create a shared red circle texture
+    let circle_image = create_circle_image(16, Color::srgb(0.9, 0.15, 0.15));
+    let circle_handle = images.add(circle_image);
+    commands.insert_resource(CreatureTextureHandle(circle_handle.clone()));
 
     for creature in &creatures {
-        let world_pos = diamond_tile_to_world(
-            creature.position.x,
-            creature.position.y,
-            grid_size,
-            tilemap_offset,
-        );
+        let world_pos =
+            diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
 
         commands.spawn((
             Sprite {
-                image: texture.clone(),
-                custom_size: Some(Vec2::new(30.0, 20.0)),
+                image: circle_handle.clone(),
+                custom_size: Some(Vec2::splat(CREATURE_SIZE)),
                 ..default()
             },
             Transform::from_translation(world_pos.extend(1.0)),
@@ -100,26 +101,6 @@ fn spawn_initial_creatures(
     commands.insert_resource(PopulationResource { creatures });
 }
 
-/// Project a Diamond isometric grid position to world space.
-///
-/// Replicates `bevy_ecs_tilemap`'s internal `DIAMOND_BASIS` matrix:
-/// ```text
-/// DIAMOND_BASIS = | 0.5   0.5 |     unscaled.x = 0.5*(x + y)
-///                 |-0.5   0.5 |     unscaled.y = 0.5*(y - x)
-/// ```
-/// Then scaled by `grid_size` and offset by the tilemap's world transform.
-fn diamond_tile_to_world(
-    x: u32,
-    y: u32,
-    grid_size: &TilemapGridSize,
-    tilemap_offset: Vec2,
-) -> Vec2 {
-    let xf = x as f32;
-    let yf = y as f32;
-    let local = Vec2::new(grid_size.x * 0.5 * (xf + yf), grid_size.y * 0.5 * (yf - xf));
-    tilemap_offset + local
-}
-
 /// System: synchronise Bevy sprites with domain creature state each frame.
 ///
 /// - **Dead creatures** are hidden (`Visibility::Hidden`)
@@ -129,16 +110,11 @@ fn sync_creature_sprites(
     mut commands: Commands,
     population: Res<PopulationResource>,
     mut query: Query<(&CreatureMarker, &mut Transform, &mut Visibility)>,
-    tilemap_query: Query<
-        (&TilemapGridSize, &Transform),
-        (With<TilemapSize>, Without<CreatureMarker>),
-    >,
-    asset_server: Res<AssetServer>,
+    tilemap_info: Res<TilemapInfo>,
+    texture: Res<CreatureTextureHandle>,
 ) {
-    let Ok((grid_size, tilemap_tf)) = tilemap_query.get_single() else {
-        return;
-    };
-    let tilemap_offset = tilemap_tf.translation.truncate();
+    let grid_size = tilemap_info.grid_size;
+    let offset = tilemap_info.offset;
 
     // Track which creature IDs already have a sprite entity
     let mut existing_ids: HashSet<u64> = HashSet::new();
@@ -146,13 +122,11 @@ fn sync_creature_sprites(
     for (marker, mut transform, mut visibility) in &mut query {
         existing_ids.insert(marker.creature_id.0);
 
-        // Find the matching domain creature
         let Some(creature) = population
             .creatures
             .iter()
             .find(|c| c.id == marker.creature_id)
         else {
-            // Creature removed from domain — hide it
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -161,32 +135,23 @@ fn sync_creature_sprites(
             *visibility = Visibility::Hidden;
         } else {
             *visibility = Visibility::Inherited;
-            let world_pos = diamond_tile_to_world(
-                creature.position.x,
-                creature.position.y,
-                grid_size,
-                tilemap_offset,
-            );
+            let world_pos =
+                diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
             transform.translation = world_pos.extend(1.0);
         }
     }
 
     // Spawn sprites for newborns not yet represented
-    let texture: Handle<Image> = asset_server.load("sprites/creature.png");
     for creature in &population.creatures {
         if existing_ids.contains(&creature.id.0) || !creature.is_alive() {
             continue;
         }
-        let world_pos = diamond_tile_to_world(
-            creature.position.x,
-            creature.position.y,
-            grid_size,
-            tilemap_offset,
-        );
+        let world_pos =
+            diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
         commands.spawn((
             Sprite {
-                image: texture.clone(),
-                custom_size: Some(Vec2::new(30.0, 20.0)),
+                image: texture.0.clone(),
+                custom_size: Some(Vec2::splat(CREATURE_SIZE)),
                 ..default()
             },
             Transform::from_translation(world_pos.extend(1.0)),
@@ -195,4 +160,49 @@ fn sync_creature_sprites(
             },
         ));
     }
+}
+
+/// Create a circle-shaped image with the given radius and color.
+///
+/// Generates a (diameter × diameter) RGBA image where pixels inside the circle
+/// are filled with the given color and outside are transparent.
+fn create_circle_image(radius: u32, color: Color) -> Image {
+    let diameter = radius * 2;
+    let cx = radius as f32;
+    let cy = radius as f32;
+    let r = radius as f32;
+    let mut data = vec![0u8; (diameter * diameter * 4) as usize];
+
+    let linear = color.to_linear();
+
+    // Convert linear back to sRGB 0-255 for the texture
+    let cr = (linear.red.powf(1.0 / 2.2) * 255.0) as u8;
+    let cg = (linear.green.powf(1.0 / 2.2) * 255.0) as u8;
+    let cb = (linear.blue.powf(1.0 / 2.2) * 255.0) as u8;
+
+    for y in 0..diameter {
+        for x in 0..diameter {
+            let dx = x as f32 + 0.5 - cx;
+            let dy = y as f32 + 0.5 - cy;
+            if dx * dx + dy * dy <= r * r {
+                let idx = ((y * diameter + x) * 4) as usize;
+                data[idx] = cr;
+                data[idx + 1] = cg;
+                data[idx + 2] = cb;
+                data[idx + 3] = 255;
+            }
+        }
+    }
+
+    Image::new(
+        Extent3d {
+            width: diameter,
+            height: diameter,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    )
 }

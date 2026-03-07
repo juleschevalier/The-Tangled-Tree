@@ -47,8 +47,8 @@ mod tests {
     use crate::domain::world::{Terrain, WorldMap};
 
     #[test]
-    fn spawn_on_flat_grass_world() {
-        let map = WorldMap::flat(10, 10, Terrain::Grass);
+    fn spawn_on_flat_dirt_world() {
+        let map = WorldMap::flat(10, 10, Terrain::Dirt);
         let creatures = CreatureSpawner::spawn_initial(&map, 5, 42);
 
         assert_eq!(creatures.len(), 5);
@@ -74,7 +74,7 @@ mod tests {
         use crate::domain::world::Tile;
         let tiles = vec![
             Tile::new(Terrain::Water, 0.0),
-            Tile::new(Terrain::Grass, 0.5),
+            Tile::new(Terrain::Dirt, 0.5),
             Tile::new(Terrain::Water, 0.0),
             Tile::new(Terrain::Water, 0.0),
         ];
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn spawn_is_deterministic() {
-        let map = WorldMap::flat(20, 20, Terrain::Grass);
+        let map = WorldMap::flat(20, 20, Terrain::Dirt);
         let a = CreatureSpawner::spawn_initial(&map, 8, 999);
         let b = CreatureSpawner::spawn_initial(&map, 8, 999);
 
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn each_creature_has_unique_id() {
-        let map = WorldMap::flat(10, 10, Terrain::Grass);
+        let map = WorldMap::flat(10, 10, Terrain::Dirt);
         let creatures = CreatureSpawner::spawn_initial(&map, 10, 42);
 
         let mut ids: Vec<_> = creatures.iter().map(|c| c.id).collect();

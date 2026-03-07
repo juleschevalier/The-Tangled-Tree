@@ -36,7 +36,6 @@ bevy = { version = "0.15", default-features = false, features = [
     "wayland",
     "png",
 ] }
-bevy_ecs_tilemap = "0.15"
 bevy_egui = "0.31"
 egui_plot = "0.31"
 

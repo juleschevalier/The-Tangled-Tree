@@ -1,8 +1,24 @@
 //! Core simulation tick logic.
 
-use crate::domain::creatures::{Creature, CreatureConfig, CreatureId};
+use crate::domain::creatures::{Creature, CreatureConfig, CreatureId, DeathCause};
 use crate::domain::genetics::{DeterministicRng, Genome, MutationConfig};
 use crate::domain::world::WorldMap;
+
+use super::movement;
+
+/// A single event that occurred during a tick.
+#[derive(Debug, Clone)]
+pub enum SimulationEvent {
+    /// A creature was born.
+    Birth { id: CreatureId, tick: u64 },
+    /// A creature died, with the age at death and cause.
+    Death {
+        id: CreatureId,
+        tick: u64,
+        age_ticks: u64,
+        cause: DeathCause,
+    },
+}
 
 /// Snapshot of population metrics after a tick.
 #[derive(Debug, Clone, Default)]
@@ -12,6 +28,11 @@ pub struct SimulationState {
     pub dead_count: usize,
     pub births_this_tick: usize,
     pub deaths_this_tick: usize,
+    pub deaths_by_starvation: usize,
+    pub deaths_by_exhaustion: usize,
+    pub deaths_by_age: usize,
+    /// Detailed events for this tick (births + deaths).
+    pub events: Vec<SimulationEvent>,
 }
 
 /// Stateless simulation tick operator.
@@ -31,27 +52,52 @@ impl SimulationTick {
         creature_config: CreatureConfig,
         mutation_config: MutationConfig,
         current_tick: u64,
-        food_regen_rate: f64,
+        grass_regen_rate: f64,
     ) -> SimulationState {
-        let alive_before = creatures.iter().filter(|c| c.is_alive()).count();
+        let mut events = Vec::new();
 
-        // 1. Feed — each living creature tries to eat from its tile
+        // Snapshot alive set before tick
+        let alive_before: Vec<CreatureId> = creatures
+            .iter()
+            .filter(|c| c.is_alive())
+            .map(|c| c.id)
+            .collect();
+
+        // 1. Move — creatures decide where to go
+        movement::move_all_creatures(creatures, world_map, current_tick);
+
+        // 2. Feed — each living creature eats grass from its tile
         for creature in creatures.iter_mut() {
             if !creature.is_alive() {
                 continue;
             }
             if let Some(tile) = world_map.get_mut(creature.position) {
-                let consumed = tile.consume_food(0.3);
+                let consumed = tile.consume_grass(0.3);
                 creature.feed(consumed as f32 * 30.0);
             }
         }
 
-        // 2. Tick — lifecycle step (age, hunger, energy, death)
+        // 3. Tick — lifecycle step (age, hunger, energy, death)
         for creature in creatures.iter_mut() {
             creature.tick(creature_config);
         }
 
-        // 3. Reproduce — find eligible pairs, create offspring
+        // Detect deaths that happened this tick
+        for creature in creatures.iter() {
+            if !creature.is_alive()
+                && alive_before.contains(&creature.id)
+                && let Some(cause) = creature.death_cause
+            {
+                events.push(SimulationEvent::Death {
+                    id: creature.id,
+                    tick: current_tick,
+                    age_ticks: creature.age_ticks,
+                    cause,
+                });
+            }
+        }
+
+        // 4. Reproduce — find eligible pairs, create offspring
         let births = Self::reproduce(
             creatures,
             world_map,
@@ -60,16 +106,41 @@ impl SimulationTick {
             current_tick,
         );
 
-        // 4. Regenerate world food
-        world_map.regenerate_all_food(food_regen_rate);
+        // 5. Regenerate grass on all tiles
+        world_map.regenerate_all_grass(grass_regen_rate);
+
+        // Record birth events
+        for child in &births {
+            events.push(SimulationEvent::Birth {
+                id: child.id,
+                tick: current_tick,
+            });
+        }
 
         // Compute metrics
         let alive_after = creatures.iter().filter(|c| c.is_alive()).count();
         let total_dead = creatures.iter().filter(|c| !c.is_alive()).count();
-        let deaths_this_tick = alive_before.saturating_sub(alive_after - births.len());
+        let deaths_this_tick = events
+            .iter()
+            .filter(|e| matches!(e, SimulationEvent::Death { .. }))
+            .count();
+        let births_count = births.len();
+
+        // Count deaths by cause
+        let mut deaths_by_starvation = 0;
+        let mut deaths_by_exhaustion = 0;
+        let mut deaths_by_age = 0;
+        for event in &events {
+            if let SimulationEvent::Death { cause, .. } = event {
+                match cause {
+                    DeathCause::Starvation => deaths_by_starvation += 1,
+                    DeathCause::Exhaustion => deaths_by_exhaustion += 1,
+                    DeathCause::Age => deaths_by_age += 1,
+                }
+            }
+        }
 
         // Add offspring to the population
-        let births_count = births.len();
         creatures.extend(births);
 
         SimulationState {
@@ -78,6 +149,10 @@ impl SimulationTick {
             dead_count: total_dead,
             births_this_tick: births_count,
             deaths_this_tick,
+            deaths_by_starvation,
+            deaths_by_exhaustion,
+            deaths_by_age,
+            events,
         }
     }
 
@@ -149,7 +224,7 @@ mod tests {
     use crate::domain::world::{Terrain, WorldMap, WorldPosition};
 
     fn setup_world_and_creatures(count: usize) -> (Vec<Creature>, WorldMap) {
-        let map = WorldMap::flat(10, 10, Terrain::Grass);
+        let map = WorldMap::flat(10, 10, Terrain::Dirt);
         let creatures: Vec<Creature> = (0..count)
             .map(|i| {
                 Creature::spawn(
@@ -183,7 +258,7 @@ mod tests {
 
     #[test]
     fn creatures_die_over_time_without_food() {
-        let map = WorldMap::flat(5, 5, Terrain::Rock); // no food
+        let map = WorldMap::flat(5, 5, Terrain::Rock); // no grass
         let mut creatures = vec![Creature::spawn(
             CreatureId(0),
             WorldPosition::new(0, 0),
@@ -211,13 +286,13 @@ mod tests {
     }
 
     #[test]
-    fn food_regeneration_happens() {
+    fn grass_regeneration_happens() {
         let (mut creatures, mut map) = setup_world_and_creatures(1);
 
-        // Drain the tile food first
+        // Drain the tile grass first
         if let Some(tile) = map.get_mut(WorldPosition::new(0, 0)) {
-            tile.consume_food(1.0);
-            assert_eq!(tile.food, 0.0);
+            tile.consume_grass(1.0);
+            assert_eq!(tile.grass, 0.0);
         }
 
         SimulationTick::step(
@@ -230,7 +305,7 @@ mod tests {
         );
 
         let tile = map.get(WorldPosition::new(0, 0)).unwrap();
-        assert!(tile.food > 0.0, "food should have regenerated");
+        assert!(tile.grass > 0.0, "grass should have regenerated");
     }
 
     #[test]
