@@ -1,5 +1,6 @@
 //! Perlin noise world generator — implements the WorldGenerator port.
 
+use bevy::log::info;
 use noise::{NoiseFn, Perlin};
 use tangled_core::domain::world::{FruitTree, Terrain, Tile, WorldConfig, WorldMap, WorldPosition};
 use tangled_core::ports::outbound::WorldGenerator;
@@ -7,8 +8,8 @@ use tangled_core::ports::outbound::WorldGenerator;
 /// Probability (0.0–1.0) that a Dirt tile receives a fruit tree.
 /// Deterministic hash-based placement — more predictable than a noise threshold
 /// (Perlin amplitude is ~±0.70, so a threshold > 0.85 is never reached).
-/// 0.08 ≈ 8% of Dirt tiles → ~130 trees on a 64×64 map with ~40% Dirt.
-const TREE_DENSITY: f64 = 0.08;
+/// 0.05 ≈ 5% of Dirt tiles → ~80 trees on a 64×64 map with ~40% Dirt.
+const TREE_DENSITY: f64 = 0.05;
 
 /// World generator using Perlin noise for terrain elevation.
 ///
@@ -67,18 +68,17 @@ impl WorldGenerator for PerlinWorldGenerator {
                 };
 
                 // Place a fruit tree on ~TREE_DENSITY fraction of Dirt tiles.
-                // Uses a position hash (not noise) for predictable density.
-                // The Perlin amplitude is ~±0.70, so any threshold > 0.85 would
-                // never be reached — hence the explicit hash approach.
+                // Uses splitmix64 finalizer for uniform distribution even with
+                // small (x, y) inputs — the previous wrapping_mul approach kept
+                // all energy in the lower bits, making >> 32 always near zero.
                 if terrain == Terrain::Dirt {
-                    let hash = config
-                        .seed
-                        .wrapping_add((x as u64).wrapping_mul(2_654_435_761))
-                        .wrapping_add((y as u64).wrapping_mul(2_246_822_519));
-                    let fraction = (hash >> 32) as f64 / (u32::MAX as f64);
+                    let mut h = config.seed ^ ((x as u64) << 32 | y as u64);
+                    h = (h ^ (h >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+                    h = (h ^ (h >> 27)).wrapping_mul(0x94d049bb133111eb);
+                    h ^= h >> 31;
+                    let fraction = (h % 10_000) as f64 / 10_000.0;
                     if fraction < TREE_DENSITY {
-                        // Spread initial lifecycle phase across the cycle using
-                        // a secondary hash so trees start at different phases.
+                        // Spread initial lifecycle phase across the cycle
                         let offset = x.wrapping_mul(317).wrapping_add(y.wrapping_mul(521));
                         trees.push(FruitTree::new_with_offset(WorldPosition::new(x, y), offset));
                     }
@@ -89,6 +89,12 @@ impl WorldGenerator for PerlinWorldGenerator {
         }
 
         let mut world_map = WorldMap::new(config.width, config.height, tiles);
+        info!(
+            "Placed {} fruit trees on {} Dirt tiles ({:.1}% density)",
+            trees.len(),
+            world_map.count_terrain(Terrain::Dirt),
+            trees.len() as f64 / world_map.count_terrain(Terrain::Dirt).max(1) as f64 * 100.0,
+        );
         world_map.set_trees(trees);
         world_map
     }
