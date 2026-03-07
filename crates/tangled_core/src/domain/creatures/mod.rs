@@ -3,3 +3,7 @@
 //! Creatures are the primary actors in the simulation. Their traits
 //! are determined by their genome, and they interact with the world
 //! through behaviors driven by their genes.
+
+mod creature;
+
+pub use creature::{Creature, CreatureConfig, CreatureId, VitalStatus};
