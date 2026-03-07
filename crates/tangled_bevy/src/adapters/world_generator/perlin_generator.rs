@@ -1,8 +1,12 @@
 //! Perlin noise world generator — implements the WorldGenerator port.
 
 use noise::{NoiseFn, Perlin};
-use tangled_core::domain::world::{Terrain, Tile, WorldConfig, WorldMap};
+use tangled_core::domain::world::{FruitTree, Terrain, Tile, WorldConfig, WorldMap, WorldPosition};
 use tangled_core::ports::outbound::WorldGenerator;
+
+/// Noise threshold above which a Dirt tile receives a fruit tree.
+/// Value \in [0.0, 1.0] \u2014 higher = fewer trees. ~0.90 yields ~10% of Dirt tiles.
+const TREE_NOISE_THRESHOLD: f64 = 0.90;
 
 /// World generator using Perlin noise for terrain elevation.
 ///
@@ -31,8 +35,11 @@ impl WorldGenerator for PerlinWorldGenerator {
         let terrain_noise = Perlin::new(config.seed as u32);
         // Second noise layer with different seed for grass distribution
         let grass_noise = Perlin::new(config.seed.wrapping_add(12345) as u32);
+        // Third noise layer for fruit tree placement
+        let tree_noise = Perlin::new(config.seed.wrapping_add(99_999) as u32);
 
         let mut tiles = Vec::with_capacity((config.width * config.height) as usize);
+        let mut trees: Vec<FruitTree> = Vec::new();
 
         for y in 0..config.height {
             for x in 0..config.width {
@@ -60,11 +67,27 @@ impl WorldGenerator for PerlinWorldGenerator {
                     Tile::new(terrain, elevation)
                 };
 
+                // Place a fruit tree on walkable Dirt tiles with enough noise
+                if terrain == Terrain::Dirt {
+                    let tx = x as f64 * self.scale;
+                    let ty = y as f64 * self.scale;
+                    let tree_raw = tree_noise.get([tx, ty]);
+                    let tree_val = (tree_raw + 1.0) / 2.0;
+                    if tree_val > TREE_NOISE_THRESHOLD {
+                        // Spread initial lifecycle phase across cycle using a position hash
+                        let offset = x.wrapping_mul(317).wrapping_add(y.wrapping_mul(521));
+                        let pos = WorldPosition::new(x, y);
+                        trees.push(FruitTree::new_with_offset(pos, offset));
+                    }
+                }
+
                 tiles.push(tile);
             }
         }
 
-        WorldMap::new(config.width, config.height, tiles)
+        let mut world_map = WorldMap::new(config.width, config.height, tiles);
+        world_map.set_trees(trees);
+        world_map
     }
 }
 
