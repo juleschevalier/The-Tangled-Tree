@@ -4,8 +4,8 @@ use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
 use tangled_core::domain::world::{Terrain, WorldMap};
 
-/// Tile size for the isometric tilemap (in pixels).
-pub const TILE_SIZE: f32 = 64.0;
+/// Tile pixel dimensions in the spritesheet (32×32 px per tile).
+pub const TILE_SIZE: f32 = 32.0;
 pub const HALF_TILE: f32 = TILE_SIZE / 2.0;
 
 /// Plugin that handles rendering the world map as a tilemap.
@@ -34,12 +34,13 @@ pub(crate) fn setup_terrain_tilemap(
     };
     let tile_size = TilemapTileSize {
         x: TILE_SIZE,
-        y: HALF_TILE,
+        y: TILE_SIZE,
     };
     let grid_size = tile_size.into();
 
-    // Load the terrain texture atlas
-    let texture_handle: Handle<Image> = asset_server.load("sprites/terrain.png");
+    // Load the terrain spritesheet atlas (32×32 px per tile)
+    // TODO: rename file to match your actual asset filename
+    let texture_handle: Handle<Image> = asset_server.load("sprites/tileset.png");
 
     let tilemap_entity = commands.spawn_empty().id();
     let mut tile_storage = TileStorage::empty(map_size);
@@ -79,17 +80,20 @@ pub(crate) fn setup_terrain_tilemap(
     });
 }
 
-/// Map domain terrain types to tile atlas indices.
+/// Map domain terrain types to spritesheet tile indices.
 ///
-/// The texture atlas layout is:
+/// Spritesheet: 32×32 px per tile, row-major order.
 /// ```text
-/// [0: Grass] [1: Water] [2: Rock] [3: Sand]
+/// Grass      → 23  (Herbe)
+/// Water      → 111 (Eau)
+/// Rock       → 18  (Terre)
+/// Sand       → 37  (Herbe haute — closest available)
 /// ```
 const fn terrain_to_tile_index(terrain: Terrain) -> u32 {
     match terrain {
-        Terrain::Grass => 0,
-        Terrain::Water => 1,
-        Terrain::Rock => 2,
-        Terrain::Sand => 3,
+        Terrain::Grass => 23,
+        Terrain::Water => 111,
+        Terrain::Rock => 18,
+        Terrain::Sand => 37,
     }
 }
