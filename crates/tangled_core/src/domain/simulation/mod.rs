@@ -6,4 +6,4 @@
 pub mod movement;
 mod tick;
 
-pub use tick::{SimulationState, SimulationTick};
+pub use tick::{SimulationEvent, SimulationState, SimulationTick};

@@ -67,7 +67,7 @@ fn best_food_neighbor(
     let mut best = Vec::new();
 
     for &pos in neighbors {
-        let food = world_map.get(pos).map(|t| t.food).unwrap_or(0.0);
+        let food = world_map.get(pos).map(|t| t.grass).unwrap_or(0.0);
 
         if food > best_food {
             best_food = food;
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn creature_moves_to_walkable_neighbor() {
-        let map = WorldMap::flat(5, 5, Terrain::Grass);
+        let map = WorldMap::flat(5, 5, Terrain::Dirt);
         let mut creatures = vec![Creature::spawn(
             CreatureId(0),
             WorldPosition::new(2, 2),
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn dead_creature_does_not_move() {
-        let map = WorldMap::flat(5, 5, Terrain::Grass);
+        let map = WorldMap::flat(5, 5, Terrain::Dirt);
         let mut creature =
             Creature::spawn(CreatureId(0), WorldPosition::new(2, 2), Genome::baseline());
 
@@ -150,7 +150,7 @@ mod tests {
         for y in 0..3u32 {
             for x in 0..3u32 {
                 let terrain = if x == 1 && y == 1 {
-                    Terrain::Grass
+                    Terrain::Dirt
                 } else {
                     Terrain::Water
                 };
@@ -176,11 +176,11 @@ mod tests {
 
     #[test]
     fn hungry_creature_seeks_food() {
-        // 1x3 strip: left=rock(no food), center=rock, right=grass(food)
+        // 1x3 strip: left=rock(no grass), center=rock, right=dirt(grass)
         let tiles = vec![
             crate::domain::world::Tile::new(Terrain::Rock, 0.5),
             crate::domain::world::Tile::new(Terrain::Rock, 0.5),
-            crate::domain::world::Tile::new(Terrain::Grass, 0.5),
+            crate::domain::world::Tile::with_grass(Terrain::Dirt, 0.5, 1.0),
         ];
         let map = WorldMap::new(3, 1, tiles);
 
@@ -202,7 +202,7 @@ mod tests {
             creatures[0].move_to(WorldPosition::new(1, 0));
         }
 
-        // The creature should prefer grass (food=1.0) over rock (food=0.0)
+        // The creature should prefer dirt-with-grass (grass=1.0) over rock (grass=0.0)
         // most of the time when it actually moves
         assert!(
             grass_visits > 50,
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn movement_is_deterministic() {
-        let map = WorldMap::flat(10, 10, Terrain::Grass);
+        let map = WorldMap::flat(10, 10, Terrain::Dirt);
 
         let make_creatures = || {
             (0..5)
