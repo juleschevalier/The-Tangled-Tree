@@ -39,6 +39,14 @@ pub struct TilemapInfo {
     pub offset: Vec2,
 }
 
+/// Axis-aligned bounding box of the entire map in world space.
+/// Used by the camera to prevent panning outside the map.
+#[derive(Resource, Clone, Copy)]
+pub struct MapBounds {
+    pub min: Vec2,
+    pub max: Vec2,
+}
+
 /// Marker component linking a sprite entity to a world tile position.
 #[derive(Component)]
 pub struct TileSprite {
@@ -78,6 +86,18 @@ pub(crate) fn setup_terrain_sprites(
     );
 
     commands.insert_resource(TilemapInfo { grid_size, offset });
+
+    // Compute world-space AABB of the map from the 4 diamond extremes.
+    // Extra padding so edge tiles aren't clipped at the viewport border.
+    let padding = Vec2::new(grid_size.x * 2.0, grid_size.y * 2.0);
+    let bounds = MapBounds {
+        min: Vec2::new(offset.x, offset.y - grid_size.y * 0.5 * (w - 1.0)) - padding,
+        max: Vec2::new(
+            offset.x + grid_size.x * 0.5 * (w - 1.0 + h - 1.0),
+            offset.y + grid_size.y * 0.5 * (h - 1.0),
+        ) + padding,
+    };
+    commands.insert_resource(bounds);
 
     // Create the shared white diamond texture (tinted per-tile)
     let diamond_image = create_diamond_image();

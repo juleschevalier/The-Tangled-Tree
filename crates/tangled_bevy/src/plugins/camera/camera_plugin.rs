@@ -4,6 +4,8 @@ use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
+use crate::adapters::renderer::tilemap_renderer::MapBounds;
+
 /// Plugin providing a 2D camera with pan (WASD / arrow keys / left-click drag)
 /// and zoom (scroll wheel).
 pub struct CameraPlugin;
@@ -37,11 +39,18 @@ fn spawn_camera(mut commands: Commands) {
     commands.spawn((Camera2d, MainCamera));
 }
 
+/// Clamp the camera translation to stay within the map bounds.
+fn clamp_to_bounds(transform: &mut Transform, bounds: &MapBounds) {
+    transform.translation.x = transform.translation.x.clamp(bounds.min.x, bounds.max.x);
+    transform.translation.y = transform.translation.y.clamp(bounds.min.y, bounds.max.y);
+}
+
 /// Pan the camera with WASD / ZQSD / arrow keys.
 fn camera_keyboard_pan(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<MainCamera>>,
+    bounds: Option<Res<MapBounds>>,
 ) {
     let mut transform = query.single_mut();
 
@@ -72,28 +81,34 @@ fn camera_keyboard_pan(
         let zoom = transform.scale.x;
         transform.translation.x += direction.x * PAN_SPEED * zoom * time.delta_secs();
         transform.translation.y += direction.y * PAN_SPEED * zoom * time.delta_secs();
+
+        if let Some(bounds) = bounds {
+            clamp_to_bounds(&mut transform, &bounds);
+        }
     }
 }
 
 /// Pan the camera by dragging with left mouse button held.
 ///
-/// Skips dragging when the pointer is over an egui window so HUD clicks
-/// don't move the map.
+/// Skips dragging when egui is using the pointer (window drag, button press, etc.)
+/// to avoid moving the map while interacting with the HUD.
 fn camera_mouse_drag(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut motion_events: EventReader<MouseMotion>,
     mut query: Query<&mut Transform, With<MainCamera>>,
     mut egui_contexts: EguiContexts,
+    bounds: Option<Res<MapBounds>>,
 ) {
-    // Consume events even if we skip, to avoid stale deltas
+    // Always consume events to avoid stale deltas on the next frame
     let deltas: Vec<Vec2> = motion_events.read().map(|e| e.delta).collect();
 
     if !mouse_button.pressed(MouseButton::Left) {
         return;
     }
 
-    // Don't pan when interacting with the egui HUD
-    if egui_contexts.ctx_mut().is_pointer_over_area() {
+    // Block pan while egui is using OR hovering the pointer (covers window drags)
+    let ctx = egui_contexts.ctx_mut();
+    if ctx.is_using_pointer() || ctx.is_pointer_over_area() {
         return;
     }
 
@@ -108,12 +123,17 @@ fn camera_mouse_drag(
     // Mouse moves in screen space; invert Y for world space, scale by zoom
     transform.translation.x -= total_delta.x * zoom;
     transform.translation.y += total_delta.y * zoom;
+
+    if let Some(bounds) = bounds {
+        clamp_to_bounds(&mut transform, &bounds);
+    }
 }
 
 /// Zoom the camera with the scroll wheel.
 fn camera_zoom(
     mut scroll_events: EventReader<MouseWheel>,
     mut query: Query<&mut Transform, With<MainCamera>>,
+    bounds: Option<Res<MapBounds>>,
 ) {
     let mut transform = query.single_mut();
 
@@ -126,5 +146,10 @@ fn camera_zoom(
         let zoom_factor = 1.0 - scroll_amount * ZOOM_SPEED;
         let new_scale = (transform.scale.x * zoom_factor).clamp(MIN_ZOOM, MAX_ZOOM);
         transform.scale = Vec3::splat(new_scale);
+    }
+
+    // Re-clamp after zoom in case the previous position is now out of bounds
+    if let Some(bounds) = bounds {
+        clamp_to_bounds(&mut transform, &bounds);
     }
 }
