@@ -13,7 +13,10 @@ pub struct TilemapRendererPlugin;
 
 impl Plugin for TilemapRendererPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_terrain_tilemap.run_if(resource_exists::<WorldMapResource>));
+        app.add_systems(
+            Startup,
+            setup_terrain_tilemap.run_if(resource_exists::<WorldMapResource>),
+        );
     }
 }
 
@@ -52,10 +55,7 @@ pub(crate) fn setup_terrain_tilemap(
 
     // Populate tiles
     for (pos, tile) in map.iter() {
-        let tile_pos = TilePos {
-            x: pos.x,
-            y: pos.y,
-        };
+        let tile_pos = TilePos { x: pos.x, y: pos.y };
         let texture_index = terrain_to_tile_index(tile.terrain);
 
         let tile_entity = commands

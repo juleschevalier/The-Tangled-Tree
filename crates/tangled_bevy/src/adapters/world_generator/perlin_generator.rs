@@ -103,7 +103,10 @@ mod tests {
             .zip(map2.iter())
             .filter(|((_, t1), (_, t2))| t1.terrain != t2.terrain)
             .count();
-        assert!(different > 0, "Different seeds should produce different maps");
+        assert!(
+            different > 0,
+            "Different seeds should produce different maps"
+        );
     }
 
     #[test]
