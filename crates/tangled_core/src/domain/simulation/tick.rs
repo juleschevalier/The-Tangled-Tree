@@ -8,9 +8,9 @@ use super::movement;
 
 /// How much energy grass feeds the creature per unit consumed.
 ///
-/// Intentionally low — grass alone is not sufficient. Creatures need
-/// fruit trees (large boost) to thrive long-term.
-const GRASS_FEED_MULTIPLIER: f32 = 5.0;
+/// Intentionally moderate — grass sustains creatures but is not enough on its
+/// own. Fruit trees deliver the large bursts needed to thrive long-term.
+const GRASS_FEED_MULTIPLIER: f32 = 10.0;
 
 /// Energy delivered to a creature that harvests fruit from a tree.
 /// This is a large, immediate boost that significantly reduces hunger.

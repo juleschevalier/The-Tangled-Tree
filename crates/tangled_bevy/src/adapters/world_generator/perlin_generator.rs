@@ -4,9 +4,11 @@ use noise::{NoiseFn, Perlin};
 use tangled_core::domain::world::{FruitTree, Terrain, Tile, WorldConfig, WorldMap, WorldPosition};
 use tangled_core::ports::outbound::WorldGenerator;
 
-/// Noise threshold above which a Dirt tile receives a fruit tree.
-/// Value \in [0.0, 1.0] \u2014 higher = fewer trees. ~0.90 yields ~10% of Dirt tiles.
-const TREE_NOISE_THRESHOLD: f64 = 0.90;
+/// Probability (0.0–1.0) that a Dirt tile receives a fruit tree.
+/// Deterministic hash-based placement — more predictable than a noise threshold
+/// (Perlin amplitude is ~±0.70, so a threshold > 0.85 is never reached).
+/// 0.08 ≈ 8% of Dirt tiles → ~130 trees on a 64×64 map with ~40% Dirt.
+const TREE_DENSITY: f64 = 0.08;
 
 /// World generator using Perlin noise for terrain elevation.
 ///
@@ -35,9 +37,6 @@ impl WorldGenerator for PerlinWorldGenerator {
         let terrain_noise = Perlin::new(config.seed as u32);
         // Second noise layer with different seed for grass distribution
         let grass_noise = Perlin::new(config.seed.wrapping_add(12345) as u32);
-        // Third noise layer for fruit tree placement
-        let tree_noise = Perlin::new(config.seed.wrapping_add(99_999) as u32);
-
         let mut tiles = Vec::with_capacity((config.width * config.height) as usize);
         let mut trees: Vec<FruitTree> = Vec::new();
 
@@ -67,17 +66,21 @@ impl WorldGenerator for PerlinWorldGenerator {
                     Tile::new(terrain, elevation)
                 };
 
-                // Place a fruit tree on walkable Dirt tiles with enough noise
+                // Place a fruit tree on ~TREE_DENSITY fraction of Dirt tiles.
+                // Uses a position hash (not noise) for predictable density.
+                // The Perlin amplitude is ~±0.70, so any threshold > 0.85 would
+                // never be reached — hence the explicit hash approach.
                 if terrain == Terrain::Dirt {
-                    let tx = x as f64 * self.scale;
-                    let ty = y as f64 * self.scale;
-                    let tree_raw = tree_noise.get([tx, ty]);
-                    let tree_val = (tree_raw + 1.0) / 2.0;
-                    if tree_val > TREE_NOISE_THRESHOLD {
-                        // Spread initial lifecycle phase across cycle using a position hash
+                    let hash = config
+                        .seed
+                        .wrapping_add((x as u64).wrapping_mul(2_654_435_761))
+                        .wrapping_add((y as u64).wrapping_mul(2_246_822_519));
+                    let fraction = (hash >> 32) as f64 / (u32::MAX as f64);
+                    if fraction < TREE_DENSITY {
+                        // Spread initial lifecycle phase across the cycle using
+                        // a secondary hash so trees start at different phases.
                         let offset = x.wrapping_mul(317).wrapping_add(y.wrapping_mul(521));
-                        let pos = WorldPosition::new(x, y);
-                        trees.push(FruitTree::new_with_offset(pos, offset));
+                        trees.push(FruitTree::new_with_offset(WorldPosition::new(x, y), offset));
                     }
                 }
 
