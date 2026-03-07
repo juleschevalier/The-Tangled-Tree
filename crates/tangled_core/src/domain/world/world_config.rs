@@ -27,8 +27,8 @@ impl WorldConfig {
     pub fn with_seed(seed: u64) -> Self {
         Self {
             seed,
-            width: 64,
-            height: 64,
+            width: 32,
+            height: 32,
             water_level: 0.35,
             rock_level: 0.75,
         }

@@ -31,7 +31,6 @@ pub struct CreatureConfig {
     pub base_energy_drain_per_tick: f32,
     pub hunger_gain_per_tick: f32,
     pub starvation_hunger_threshold: f32,
-    pub starvation_damage_per_tick: f32,
     pub max_age_ticks: u64,
     pub reproduction_hunger_max: f32,
     pub reproduction_energy_min: f32,
@@ -41,14 +40,13 @@ pub struct CreatureConfig {
 impl Default for CreatureConfig {
     fn default() -> Self {
         Self {
-            base_energy_drain_per_tick: 0.75,
-            hunger_gain_per_tick: 1.0,
-            starvation_hunger_threshold: 100.0,
-            starvation_damage_per_tick: 1.5,
+            base_energy_drain_per_tick: 0.08,
+            hunger_gain_per_tick: 1.5,
+            starvation_hunger_threshold: 80.0,
             max_age_ticks: 10_000,
-            reproduction_hunger_max: 40.0,
-            reproduction_energy_min: 60.0,
-            reproduction_min_age_ticks: 500,
+            reproduction_hunger_max: 50.0,
+            reproduction_energy_min: 50.0,
+            reproduction_min_age_ticks: 100,
         }
     }
 }
@@ -108,22 +106,20 @@ impl Creature {
         let metabolism = self.genome.expressed_speed() * self.genome.expressed_size();
         self.energy -= config.base_energy_drain_per_tick + metabolism;
 
-        if self.hunger >= config.starvation_hunger_threshold {
-            self.energy -= config.starvation_damage_per_tick;
-        }
-
-        // Determine death cause (in order of precedence: age, exhaustion, starvation)
+        // Determine death cause (in order of precedence: age, starvation, exhaustion)
         if self.age_ticks >= config.max_age_ticks {
             self.energy = self.energy.max(0.0);
             self.status = VitalStatus::Dead;
             self.death_cause = Some(DeathCause::Age);
+        } else if self.hunger >= config.starvation_hunger_threshold {
+            // Starvation is immediately lethal — no lingering "damage over time".
+            self.hunger = config.starvation_hunger_threshold;
+            self.status = VitalStatus::Dead;
+            self.death_cause = Some(DeathCause::Starvation);
         } else if self.energy <= 0.0 {
             self.energy = 0.0;
             self.status = VitalStatus::Dead;
             self.death_cause = Some(DeathCause::Exhaustion);
-        } else if self.hunger >= config.starvation_hunger_threshold {
-            // Creature is at max starvation but still alive (will die next tick if no food)
-            self.death_cause = Some(DeathCause::Starvation);
         }
     }
 
@@ -183,18 +179,19 @@ mod tests {
     }
 
     #[test]
-    fn starvation_adds_extra_energy_loss() {
+    fn starvation_kills_when_hunger_reaches_threshold() {
         let mut creature = baseline_creature();
         let config = CreatureConfig {
             starvation_hunger_threshold: 10.0,
             ..CreatureConfig::default()
         };
-        creature.hunger = 10.0;
+        // Set hunger just below threshold — next tick's hunger_gain will push it over
+        creature.hunger = 10.0 - config.hunger_gain_per_tick + 0.01;
 
-        let energy_before = creature.energy;
         creature.tick(config);
 
-        assert!(creature.energy < energy_before - config.base_energy_drain_per_tick);
+        assert_eq!(creature.status(), VitalStatus::Dead);
+        assert_eq!(creature.death_cause, Some(DeathCause::Starvation));
     }
 
     #[test]

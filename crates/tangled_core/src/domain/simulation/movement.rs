@@ -9,7 +9,7 @@ use crate::domain::genetics::DeterministicRng;
 use crate::domain::world::WorldMap;
 
 /// Movement behaviour threshold — creatures hungrier than this seek food.
-const FOOD_SEEK_HUNGER_THRESHOLD: f32 = 20.0;
+const FOOD_SEEK_HUNGER_THRESHOLD: f32 = 10.0;
 
 /// Decide and apply movement for all living creatures.
 ///
