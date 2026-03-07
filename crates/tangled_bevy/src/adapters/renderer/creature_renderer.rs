@@ -53,7 +53,7 @@ pub struct WorldConfigResource(pub WorldConfig);
 struct CreatureTextureHandle(Handle<Image>);
 
 /// Number of creatures to spawn initially.
-const INITIAL_POPULATION: usize = 20;
+const INITIAL_POPULATION: usize = 40;
 
 /// Creature circle diameter in pixels.
 const CREATURE_SIZE: f32 = 10.0;

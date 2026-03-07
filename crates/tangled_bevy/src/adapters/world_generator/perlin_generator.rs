@@ -21,7 +21,7 @@ impl Default for PerlinWorldGenerator {
     fn default() -> Self {
         Self {
             scale: 0.05,
-            grass_scale: 0.1,
+            grass_scale: 0.05,
         }
     }
 }
@@ -50,7 +50,11 @@ impl WorldGenerator for PerlinWorldGenerator {
                     let gx = x as f64 * self.grass_scale;
                     let gy = y as f64 * self.grass_scale;
                     let grass_raw = grass_noise.get([gx, gy]);
-                    let grass = ((grass_raw + 1.0) / 2.0).clamp(0.0, 1.0);
+                    let mut grass = ((grass_raw + 1.0) / 2.0).clamp(0.0, 1.0);
+                    // Apply threshold: sparse grass, less abundant
+                    if grass < 0.35 {
+                        grass = 0.0;
+                    }
                     Tile::with_grass(terrain, elevation, grass)
                 } else {
                     Tile::new(terrain, elevation)

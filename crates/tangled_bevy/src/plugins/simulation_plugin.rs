@@ -14,8 +14,8 @@ pub struct SimulationPlugin;
 /// Seconds between each simulation tick.
 const TICK_INTERVAL: f64 = 0.15;
 
-/// Grass regeneration rate per tick.
-const GRASS_REGEN_RATE: f64 = 0.03;
+/// Grass regeneration rate per tick (very slow).
+const GRASS_REGEN_RATE: f64 = 0.003;
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
