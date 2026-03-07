@@ -4,7 +4,7 @@
 //! the Bevy adapter (`tangled_bevy`), and the persistence adapter
 //! (`tangled_persistence`), then launches the simulation.
 
-use bevy::prelude::*;
+use bevy::{asset::AssetPlugin, prelude::*};
 use tangled_bevy::plugins::TangledPlugin;
 use tangled_core::domain::world::WorldConfig;
 
@@ -13,14 +13,20 @@ fn main() {
     let world_config = WorldConfig::with_seed(42);
 
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "The Tangled Tree".into(),
-                resolution: (1280., 720.).into(),
+        .add_plugins(DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "The Tangled Tree".into(),
+                    resolution: (1280., 720.).into(),
+                    ..default()
+                }),
+                ..default()
+            })
+            .set(AssetPlugin {
+                file_path: concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets").to_string(),
                 ..default()
             }),
-            ..default()
-        }))
+        )
         .add_plugins(TangledPlugin { world_config })
         .run();
 }
