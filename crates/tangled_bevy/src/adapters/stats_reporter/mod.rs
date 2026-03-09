@@ -57,7 +57,6 @@ fn collect_events(state: Option<Res<SimulationStateResource>>, mut log: ResMut<E
             } => {
                 let cause_str = match cause {
                     tangled_core::domain::creatures::DeathCause::Starvation => "starvation",
-                    tangled_core::domain::creatures::DeathCause::Exhaustion => "exhaustion",
                     tangled_core::domain::creatures::DeathCause::Age => "old age",
                 };
                 format!(
@@ -143,10 +142,6 @@ fn stats_hud_system(
 
                     ui.label("Starvation:");
                     ui.label(format!("⊕ {}", state.deaths_by_starvation));
-                    ui.end_row();
-
-                    ui.label("Exhaustion:");
-                    ui.label(format!("⊕ {}", state.deaths_by_exhaustion));
                     ui.end_row();
 
                     ui.label("Old age:");

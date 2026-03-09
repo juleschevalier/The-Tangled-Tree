@@ -39,7 +39,6 @@ pub struct SimulationState {
     pub births_this_tick: usize,
     pub deaths_this_tick: usize,
     pub deaths_by_starvation: usize,
-    pub deaths_by_exhaustion: usize,
     pub deaths_by_age: usize,
     /// Detailed events for this tick (births + deaths).
     pub events: Vec<SimulationEvent>,
@@ -49,7 +48,7 @@ pub struct SimulationState {
 ///
 /// Each call to [`step`](Self::step) advances the world by one tick:
 /// 1. **Feed** — each living creature eats from its tile
-/// 2. **Tick** — age, hunger, energy drain, possible death
+/// 2. **Tick** — age, energy drain, possible death
 /// 3. **Reproduce** — eligible pairs produce offspring
 /// 4. **Regenerate** — world food grows back
 pub struct SimulationTick;
@@ -92,7 +91,7 @@ impl SimulationTick {
             }
         }
 
-        // 3. Tick — lifecycle step (age, hunger, energy, death)
+        // 3. Tick — lifecycle step (age, energy, death)
         for creature in creatures.iter_mut() {
             creature.tick(creature_config);
         }
@@ -146,13 +145,11 @@ impl SimulationTick {
 
         // Count deaths by cause
         let mut deaths_by_starvation = 0;
-        let mut deaths_by_exhaustion = 0;
         let mut deaths_by_age = 0;
         for event in &events {
             if let SimulationEvent::Death { cause, .. } = event {
                 match cause {
                     DeathCause::Starvation => deaths_by_starvation += 1,
-                    DeathCause::Exhaustion => deaths_by_exhaustion += 1,
                     DeathCause::Age => deaths_by_age += 1,
                 }
             }
@@ -168,7 +165,6 @@ impl SimulationTick {
             births_this_tick: births_count,
             deaths_this_tick,
             deaths_by_starvation,
-            deaths_by_exhaustion,
             deaths_by_age,
             events,
         }
@@ -284,7 +280,7 @@ mod tests {
         )];
 
         let config = CreatureConfig {
-            base_energy_drain_per_tick: 10.0,
+            energy_drain_per_tick: 10.0,
             ..CreatureConfig::default()
         };
 

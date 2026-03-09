@@ -3,7 +3,7 @@
 //! Visual encoding:
 //! - **Size**  → `SizeGene` (circle radius 4–12 px)
 //! - **Color** → `DietGene` (green/yellow/red) × age (pale → saturated)
-//! - **Vitality bar** → energy (green, left) + hunger (red, right), shown only in danger
+//! - **Vitality bar** → single energy gauge (green→red), shown only when low
 
 use std::collections::HashSet;
 
@@ -41,8 +41,7 @@ const BAR_HEIGHT: f32 = 2.0;
 const BAR_Y_OFFSET: f32 = 8.0;
 
 /// Thresholds below which the vitality bar becomes visible.
-const DANGER_HUNGER_RATIO: f32 = 0.75; // hunger / threshold
-const DANGER_ENERGY: f32 = 30.0;
+const DANGER_ENERGY: f32 = 50.0;
 
 // ─── Plugin ─────────────────────────────────────────────────────
 
@@ -90,13 +89,9 @@ struct CreatureTextureHandle(Handle<Image>);
 #[derive(Resource)]
 struct BarTextureHandle(Handle<Image>);
 
-/// Marker for the energy (green) half of the vitality bar.
+/// Marker for the energy vitality bar.
 #[derive(Component)]
 struct EnergyBar;
-
-/// Marker for the hunger (red) half of the vitality bar.
-#[derive(Component)]
-struct HungerBar;
 
 // ─── Spawn system ───────────────────────────────────────────────
 
@@ -171,31 +166,18 @@ fn spawn_creature_entity(
             },
         ))
         .with_children(|parent| {
-            // Energy bar (green, left half)
+            // Energy bar (green→red gradient via color, full width)
             parent.spawn((
                 Sprite {
                     image: bar_handle.clone(),
                     color: Color::srgb(0.2, 0.85, 0.2),
-                    custom_size: Some(Vec2::new(BAR_WIDTH / 2.0, BAR_HEIGHT)),
-                    anchor: bevy::sprite::Anchor::CenterRight,
-                    ..default()
-                },
-                Transform::from_translation(Vec3::new(0.0, BAR_Y_OFFSET, 0.1)),
-                Visibility::Hidden,
-                EnergyBar,
-            ));
-            // Hunger bar (red, right half)
-            parent.spawn((
-                Sprite {
-                    image: bar_handle.clone(),
-                    color: Color::srgb(0.9, 0.15, 0.15),
-                    custom_size: Some(Vec2::new(BAR_WIDTH / 2.0, BAR_HEIGHT)),
+                    custom_size: Some(Vec2::new(BAR_WIDTH, BAR_HEIGHT)),
                     anchor: bevy::sprite::Anchor::CenterLeft,
                     ..default()
                 },
-                Transform::from_translation(Vec3::new(0.0, BAR_Y_OFFSET, 0.1)),
+                Transform::from_translation(Vec3::new(-BAR_WIDTH / 2.0, BAR_Y_OFFSET, 0.1)),
                 Visibility::Hidden,
-                HungerBar,
+                EnergyBar,
             ));
         });
 }
@@ -217,11 +199,7 @@ fn sync_creature_sprites(
     )>,
     mut energy_bars: Query<
         (&mut Visibility, &mut Sprite),
-        (With<EnergyBar>, Without<HungerBar>, Without<CreatureMarker>),
-    >,
-    mut hunger_bars: Query<
-        (&mut Visibility, &mut Sprite),
-        (With<HungerBar>, Without<EnergyBar>, Without<CreatureMarker>),
+        (With<EnergyBar>, Without<CreatureMarker>),
     >,
     tilemap_info: Res<TilemapInfo>,
     texture: Res<CreatureTextureHandle>,
@@ -229,7 +207,6 @@ fn sync_creature_sprites(
 ) {
     let grid_size = tilemap_info.grid_size;
     let offset = tilemap_info.offset;
-    let config = CreatureConfig::default();
 
     let mut existing_ids: HashSet<u64> = HashSet::new();
 
@@ -260,13 +237,10 @@ fn sync_creature_sprites(
         sprite.color = creature_color(creature);
         sprite.custom_size = Some(Vec2::splat(creature_size_px(creature)));
 
-        // Update vitality bars
-        let in_danger = creature.hunger / config.starvation_hunger_threshold >= DANGER_HUNGER_RATIO
-            || creature.energy < DANGER_ENERGY;
+        // Update vitality bar
+        let in_danger = creature.energy < DANGER_ENERGY;
 
         let energy_ratio = (creature.energy / 100.0).clamp(0.0, 1.0);
-        let hunger_ratio =
-            (creature.hunger / config.starvation_hunger_threshold).clamp(0.0, 1.0);
 
         for &child in children.iter() {
             if let Ok((mut bar_vis, mut bar_sprite)) = energy_bars.get_mut(child) {
@@ -276,16 +250,13 @@ fn sync_creature_sprites(
                     Visibility::Hidden
                 };
                 bar_sprite.custom_size =
-                    Some(Vec2::new(BAR_WIDTH / 2.0 * energy_ratio, BAR_HEIGHT));
-            }
-            if let Ok((mut bar_vis, mut bar_sprite)) = hunger_bars.get_mut(child) {
-                *bar_vis = if in_danger {
-                    Visibility::Inherited
-                } else {
-                    Visibility::Hidden
-                };
-                bar_sprite.custom_size =
-                    Some(Vec2::new(BAR_WIDTH / 2.0 * hunger_ratio, BAR_HEIGHT));
+                    Some(Vec2::new(BAR_WIDTH * energy_ratio, BAR_HEIGHT));
+                // Color: green when full → red when empty
+                bar_sprite.color = Color::srgb(
+                    1.0 - energy_ratio,
+                    energy_ratio * 0.85,
+                    0.1,
+                );
             }
         }
     }

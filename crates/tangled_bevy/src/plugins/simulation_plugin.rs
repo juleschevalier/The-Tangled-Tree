@@ -71,7 +71,6 @@ fn simulation_tick_system(
 
     // Save cumulative death-cause totals before the tick overwrites the state
     let prev_by_starvation = state.0.deaths_by_starvation;
-    let prev_by_exhaustion = state.0.deaths_by_exhaustion;
     let prev_by_age = state.0.deaths_by_age;
 
     let mut new_state = SimulationTick::step(
@@ -85,7 +84,6 @@ fn simulation_tick_system(
 
     // Accumulate death-cause counters across ticks
     new_state.deaths_by_starvation += prev_by_starvation;
-    new_state.deaths_by_exhaustion += prev_by_exhaustion;
     new_state.deaths_by_age += prev_by_age;
 
     state.0 = new_state;

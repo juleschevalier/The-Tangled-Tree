@@ -1,15 +1,15 @@
 //! Creature movement decisions — pure domain logic.
 //!
 //! Each living creature picks a neighboring tile to move to based on
-//! its current hunger, its speed gene, and the available food nearby.
+//! its current energy level, its speed gene, and the available food nearby.
 //! Movement is deterministic for a given tick and creature state.
 
 use crate::domain::creatures::Creature;
 use crate::domain::genetics::DeterministicRng;
 use crate::domain::world::WorldMap;
 
-/// Movement behaviour threshold — creatures hungrier than this seek food.
-const FOOD_SEEK_HUNGER_THRESHOLD: f32 = 10.0;
+/// Energy threshold below which creatures actively seek food.
+const FOOD_SEEK_ENERGY_THRESHOLD: f32 = 70.0;
 
 /// Decide and apply movement for all living creatures.
 ///
@@ -44,7 +44,7 @@ pub fn move_all_creatures(creatures: &mut [Creature], world_map: &WorldMap, tick
             continue;
         }
 
-        let destination = if creature.hunger > FOOD_SEEK_HUNGER_THRESHOLD {
+        let destination = if creature.energy < FOOD_SEEK_ENERGY_THRESHOLD {
             // Seek food — pick the neighbor with the most food
             best_food_neighbor(&neighbors, world_map, &mut rng)
         } else {
@@ -186,8 +186,8 @@ mod tests {
 
         let mut creature =
             Creature::spawn(CreatureId(0), WorldPosition::new(1, 0), Genome::baseline());
-        // Make creature very hungry
-        creature.hunger = 80.0;
+        // Make creature low on energy so it seeks food
+        creature.energy = 20.0;
 
         let mut creatures = vec![creature];
 
