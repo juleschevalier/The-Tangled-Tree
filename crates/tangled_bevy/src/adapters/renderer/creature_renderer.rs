@@ -1,18 +1,50 @@
 //! Creature renderer — spawns Bevy entities for domain creatures on the isometric map.
 //!
-//! Creatures are rendered as red circles positioned using the diamond iso projection.
+//! Visual encoding:
+//! - **Size**  → `SizeGene` (circle radius 4–12 px)
+//! - **Color** → `DietGene` (green/yellow/red) × age (pale → saturated)
+//! - **Vitality bar** → energy (green, left) + hunger (red, right), shown only in danger
 
 use std::collections::HashSet;
 
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use tangled_core::domain::creatures::{Creature, CreatureId, CreatureSpawner};
+use tangled_core::domain::creatures::{Creature, CreatureConfig, CreatureId, CreatureSpawner};
+use tangled_core::domain::genetics::Diet;
 use tangled_core::domain::world::WorldConfig;
 
 use super::tilemap_renderer::{
     TilemapInfo, WorldMapResource, diamond_tile_to_world, setup_terrain_sprites,
 };
+
+// ─── Constants ──────────────────────────────────────────────────
+
+/// Z layer for creature sprites (above tiles and trees).
+const CREATURE_Z: f32 = 1.0;
+
+/// Circle size range in pixels, mapped from SizeGene (0.5–2.5).
+const MIN_CREATURE_PX: f32 = 4.0;
+const MAX_CREATURE_PX: f32 = 12.0;
+
+/// SizeGene value range (mirrors `SizeGene::MIN` / `SizeGene::MAX`).
+const SIZE_GENE_MIN: f32 = 0.5;
+const SIZE_GENE_MAX: f32 = 2.5;
+
+/// Number of creatures to spawn initially.
+const INITIAL_POPULATION: usize = 40;
+
+/// Vitality bar dimensions.
+const BAR_WIDTH: f32 = 14.0;
+const BAR_HEIGHT: f32 = 2.0;
+/// Vertical offset above the creature center.
+const BAR_Y_OFFSET: f32 = 8.0;
+
+/// Thresholds below which the vitality bar becomes visible.
+const DANGER_HUNGER_RATIO: f32 = 0.75; // hunger / threshold
+const DANGER_ENERGY: f32 = 30.0;
+
+// ─── Plugin ─────────────────────────────────────────────────────
 
 /// Plugin that handles spawning and rendering creatures.
 pub struct CreatureRendererPlugin;
@@ -32,6 +64,8 @@ impl Plugin for CreatureRendererPlugin {
     }
 }
 
+// ─── Components & Resources ─────────────────────────────────────
+
 /// Bevy marker component linking an entity to a domain creature.
 #[derive(Component)]
 pub struct CreatureMarker {
@@ -48,15 +82,23 @@ pub struct PopulationResource {
 #[derive(Resource)]
 pub struct WorldConfigResource(pub WorldConfig);
 
-/// Resource holding the shared red circle texture handle.
+/// Resource holding the shared white circle texture handle (tinted per creature).
 #[derive(Resource)]
 struct CreatureTextureHandle(Handle<Image>);
 
-/// Number of creatures to spawn initially.
-const INITIAL_POPULATION: usize = 40;
+/// Resource holding a 1×1 white pixel texture for the vitality bars.
+#[derive(Resource)]
+struct BarTextureHandle(Handle<Image>);
 
-/// Creature circle diameter in pixels.
-const CREATURE_SIZE: f32 = 10.0;
+/// Marker for the energy (green) half of the vitality bar.
+#[derive(Component)]
+struct EnergyBar;
+
+/// Marker for the hunger (red) half of the vitality bar.
+#[derive(Component)]
+struct HungerBar;
+
+// ─── Spawn system ───────────────────────────────────────────────
 
 /// System: spawn domain creatures then create Bevy sprite entities.
 fn spawn_initial_creatures(
@@ -75,51 +117,123 @@ fn spawn_initial_creatures(
     let grid_size = tilemap_info.grid_size;
     let offset = tilemap_info.offset;
 
-    // Create a shared red circle texture
-    let circle_image = create_circle_image(16, Color::srgb(0.9, 0.15, 0.15));
+    // Shared white circle texture — tinted per-creature via Sprite::color
+    let circle_image = create_white_circle(16);
     let circle_handle = images.add(circle_image);
     commands.insert_resource(CreatureTextureHandle(circle_handle.clone()));
 
-    for creature in &creatures {
-        let world_pos =
-            diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
+    // Shared 1×1 white pixel for vitality bars
+    let bar_image = create_white_pixel();
+    let bar_handle = images.add(bar_image);
+    commands.insert_resource(BarTextureHandle(bar_handle.clone()));
 
-        commands.spawn((
-            Sprite {
-                image: circle_handle.clone(),
-                custom_size: Some(Vec2::splat(CREATURE_SIZE)),
-                ..default()
-            },
-            Transform::from_translation(world_pos.extend(1.0)),
-            CreatureMarker {
-                creature_id: creature.id,
-            },
-        ));
+    for creature in &creatures {
+        spawn_creature_entity(
+            &mut commands,
+            creature,
+            grid_size,
+            offset,
+            &circle_handle,
+            &bar_handle,
+        );
     }
 
     info!("Spawned {} creatures on the map", creatures.len());
     commands.insert_resource(PopulationResource { creatures });
 }
 
+/// Spawn a single creature entity with child bar entities.
+fn spawn_creature_entity(
+    commands: &mut Commands,
+    creature: &Creature,
+    grid_size: Vec2,
+    offset: Vec2,
+    circle_handle: &Handle<Image>,
+    bar_handle: &Handle<Image>,
+) {
+    let world_pos =
+        diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
+    let size_px = creature_size_px(creature);
+    let color = creature_color(creature);
+
+    commands
+        .spawn((
+            Sprite {
+                image: circle_handle.clone(),
+                color,
+                custom_size: Some(Vec2::splat(size_px)),
+                ..default()
+            },
+            Transform::from_translation(world_pos.extend(CREATURE_Z)),
+            Visibility::Inherited,
+            CreatureMarker {
+                creature_id: creature.id,
+            },
+        ))
+        .with_children(|parent| {
+            // Energy bar (green, left half)
+            parent.spawn((
+                Sprite {
+                    image: bar_handle.clone(),
+                    color: Color::srgb(0.2, 0.85, 0.2),
+                    custom_size: Some(Vec2::new(BAR_WIDTH / 2.0, BAR_HEIGHT)),
+                    anchor: bevy::sprite::Anchor::CenterRight,
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(0.0, BAR_Y_OFFSET, 0.1)),
+                Visibility::Hidden,
+                EnergyBar,
+            ));
+            // Hunger bar (red, right half)
+            parent.spawn((
+                Sprite {
+                    image: bar_handle.clone(),
+                    color: Color::srgb(0.9, 0.15, 0.15),
+                    custom_size: Some(Vec2::new(BAR_WIDTH / 2.0, BAR_HEIGHT)),
+                    anchor: bevy::sprite::Anchor::CenterLeft,
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(0.0, BAR_Y_OFFSET, 0.1)),
+                Visibility::Hidden,
+                HungerBar,
+            ));
+        });
+}
+
+// ─── Sync system ────────────────────────────────────────────────
+
 /// System: synchronise Bevy sprites with domain creature state each frame.
-///
-/// - **Dead creatures** are hidden (`Visibility::Hidden`)
-/// - **Live creatures** have their transform updated to match position
-/// - **Newborns** (no matching Bevy entity) get a new sprite entity spawned
+#[allow(clippy::type_complexity)]
 fn sync_creature_sprites(
     mut commands: Commands,
     population: Res<PopulationResource>,
-    mut query: Query<(&CreatureMarker, &mut Transform, &mut Visibility)>,
+    mut creature_query: Query<(
+        Entity,
+        &CreatureMarker,
+        &mut Transform,
+        &mut Visibility,
+        &mut Sprite,
+        &Children,
+    )>,
+    mut energy_bars: Query<
+        (&mut Visibility, &mut Sprite),
+        (With<EnergyBar>, Without<HungerBar>, Without<CreatureMarker>),
+    >,
+    mut hunger_bars: Query<
+        (&mut Visibility, &mut Sprite),
+        (With<HungerBar>, Without<EnergyBar>, Without<CreatureMarker>),
+    >,
     tilemap_info: Res<TilemapInfo>,
     texture: Res<CreatureTextureHandle>,
+    bar_texture: Res<BarTextureHandle>,
 ) {
     let grid_size = tilemap_info.grid_size;
     let offset = tilemap_info.offset;
+    let config = CreatureConfig::default();
 
-    // Track which creature IDs already have a sprite entity
     let mut existing_ids: HashSet<u64> = HashSet::new();
 
-    for (marker, mut transform, mut visibility) in &mut query {
+    for (_, marker, mut transform, mut vis, mut sprite, children) in &mut creature_query {
         existing_ids.insert(marker.creature_id.0);
 
         let Some(creature) = population
@@ -127,17 +241,52 @@ fn sync_creature_sprites(
             .iter()
             .find(|c| c.id == marker.creature_id)
         else {
-            *visibility = Visibility::Hidden;
+            *vis = Visibility::Hidden;
             continue;
         };
 
         if !creature.is_alive() {
-            *visibility = Visibility::Hidden;
-        } else {
-            *visibility = Visibility::Inherited;
-            let world_pos =
-                diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
-            transform.translation = world_pos.extend(1.0);
+            *vis = Visibility::Hidden;
+            continue;
+        }
+
+        // Update position
+        *vis = Visibility::Inherited;
+        let world_pos =
+            diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
+        transform.translation = world_pos.extend(CREATURE_Z);
+
+        // Update color and size
+        sprite.color = creature_color(creature);
+        sprite.custom_size = Some(Vec2::splat(creature_size_px(creature)));
+
+        // Update vitality bars
+        let in_danger = creature.hunger / config.starvation_hunger_threshold >= DANGER_HUNGER_RATIO
+            || creature.energy < DANGER_ENERGY;
+
+        let energy_ratio = (creature.energy / 100.0).clamp(0.0, 1.0);
+        let hunger_ratio =
+            (creature.hunger / config.starvation_hunger_threshold).clamp(0.0, 1.0);
+
+        for &child in children.iter() {
+            if let Ok((mut bar_vis, mut bar_sprite)) = energy_bars.get_mut(child) {
+                *bar_vis = if in_danger {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                };
+                bar_sprite.custom_size =
+                    Some(Vec2::new(BAR_WIDTH / 2.0 * energy_ratio, BAR_HEIGHT));
+            }
+            if let Ok((mut bar_vis, mut bar_sprite)) = hunger_bars.get_mut(child) {
+                *bar_vis = if in_danger {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                };
+                bar_sprite.custom_size =
+                    Some(Vec2::new(BAR_WIDTH / 2.0 * hunger_ratio, BAR_HEIGHT));
+            }
         }
     }
 
@@ -146,39 +295,55 @@ fn sync_creature_sprites(
         if existing_ids.contains(&creature.id.0) || !creature.is_alive() {
             continue;
         }
-        let world_pos =
-            diamond_tile_to_world(creature.position.x, creature.position.y, grid_size, offset);
-        commands.spawn((
-            Sprite {
-                image: texture.0.clone(),
-                custom_size: Some(Vec2::splat(CREATURE_SIZE)),
-                ..default()
-            },
-            Transform::from_translation(world_pos.extend(1.0)),
-            CreatureMarker {
-                creature_id: creature.id,
-            },
-        ));
+        spawn_creature_entity(
+            &mut commands,
+            creature,
+            grid_size,
+            offset,
+            &texture.0,
+            &bar_texture.0,
+        );
     }
 }
 
-/// Create a circle-shaped image with the given radius and color.
+// ─── Visual helpers ─────────────────────────────────────────────
+
+/// Map a creature's SizeGene to a pixel diameter.
+fn creature_size_px(creature: &Creature) -> f32 {
+    let size = creature.genome.expressed_size();
+    let t = ((size - SIZE_GENE_MIN) / (SIZE_GENE_MAX - SIZE_GENE_MIN)).clamp(0.0, 1.0);
+    MIN_CREATURE_PX + t * (MAX_CREATURE_PX - MIN_CREATURE_PX)
+}
+
+/// Compute the creature's display color from Diet and Age.
 ///
-/// Generates a (diameter × diameter) RGBA image where pixels inside the circle
-/// are filled with the given color and outside are transparent.
-fn create_circle_image(radius: u32, color: Color) -> Image {
-    let diameter = radius * 2;
-    let cx = radius as f32;
-    let cy = radius as f32;
-    let r = radius as f32;
+/// - Diet sets the base hue: Herbivore=green, Omnivore=yellow, Carnivore=red
+/// - Age modulates saturation: young=pale/pastel → old=rich/saturated
+fn creature_color(creature: &Creature) -> Color {
+    let config = CreatureConfig::default();
+    let age_ratio = (creature.age_ticks as f32 / config.max_age_ticks as f32).clamp(0.0, 1.0);
+
+    // Pale → saturated: interpolate between a muted pastel and a vivid tone.
+    // saturation factor: 0.3 (young) → 1.0 (old)
+    let sat = 0.3 + 0.7 * age_ratio;
+
+    let (r, g, b) = match creature.genome.expressed_diet() {
+        Diet::Herbivore => (0.2 * sat, 0.4 + 0.5 * sat, 0.15 * sat),
+        Diet::Omnivore => (0.5 + 0.4 * sat, 0.4 + 0.3 * sat, 0.1 * sat),
+        Diet::Carnivore => (0.5 + 0.45 * sat, 0.15 * sat, 0.1 * sat),
+    };
+
+    Color::srgb(r, g, b)
+}
+
+// ─── Texture generation ─────────────────────────────────────────
+
+/// Create a white circle image with the given diameter (tinted at render time).
+fn create_white_circle(diameter: u32) -> Image {
+    let cx = diameter as f32 / 2.0;
+    let cy = diameter as f32 / 2.0;
+    let r = cx;
     let mut data = vec![0u8; (diameter * diameter * 4) as usize];
-
-    let linear = color.to_linear();
-
-    // Convert linear back to sRGB 0-255 for the texture
-    let cr = (linear.red.powf(1.0 / 2.2) * 255.0) as u8;
-    let cg = (linear.green.powf(1.0 / 2.2) * 255.0) as u8;
-    let cb = (linear.blue.powf(1.0 / 2.2) * 255.0) as u8;
 
     for y in 0..diameter {
         for x in 0..diameter {
@@ -186,9 +351,9 @@ fn create_circle_image(radius: u32, color: Color) -> Image {
             let dy = y as f32 + 0.5 - cy;
             if dx * dx + dy * dy <= r * r {
                 let idx = ((y * diameter + x) * 4) as usize;
-                data[idx] = cr;
-                data[idx + 1] = cg;
-                data[idx + 2] = cb;
+                data[idx] = 255;
+                data[idx + 1] = 255;
+                data[idx + 2] = 255;
                 data[idx + 3] = 255;
             }
         }
@@ -202,6 +367,21 @@ fn create_circle_image(radius: u32, color: Color) -> Image {
         },
         TextureDimension::D2,
         data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+}
+
+/// Create a 1×1 white pixel image (used for scalable bar sprites).
+fn create_white_pixel() -> Image {
+    Image::new(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        vec![255, 255, 255, 255],
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::RENDER_WORLD,
     )
