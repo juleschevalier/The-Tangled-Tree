@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy_egui::EguiContexts;
 use tangled_core::domain::creatures::{Creature, CreatureConfig, CreatureId, CreatureSpawner};
 use tangled_core::domain::genetics::Diet;
 use tangled_core::domain::world::WorldConfig;
@@ -17,6 +18,7 @@ use tangled_core::domain::world::WorldConfig;
 use super::tilemap_renderer::{
     TilemapInfo, WorldMapResource, diamond_tile_to_world, setup_terrain_sprites,
 };
+use crate::plugins::camera::MainCamera;
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -40,6 +42,9 @@ const BAR_HEIGHT: f32 = 2.0;
 /// Vertical offset above the creature center.
 const BAR_Y_OFFSET: f32 = 8.0;
 
+/// Click-detection radius in world pixels.
+const CLICK_RADIUS: f32 = 12.0;
+
 /// Thresholds below which the vitality bar becomes visible.
 const DANGER_ENERGY: f32 = 50.0;
 
@@ -50,16 +55,20 @@ pub struct CreatureRendererPlugin;
 
 impl Plugin for CreatureRendererPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Startup,
-            spawn_initial_creatures
-                .run_if(resource_exists::<WorldMapResource>)
-                .after(setup_terrain_sprites),
-        )
-        .add_systems(
-            Update,
-            sync_creature_sprites.run_if(resource_exists::<PopulationResource>),
-        );
+        app.insert_resource(SelectedCreature(None))
+            .add_systems(
+                Startup,
+                spawn_initial_creatures
+                    .run_if(resource_exists::<WorldMapResource>)
+                    .after(setup_terrain_sprites),
+            )
+            .add_systems(
+                Update,
+                (
+                    creature_click_system,
+                    sync_creature_sprites.run_if(resource_exists::<PopulationResource>),
+                ),
+            );
     }
 }
 
@@ -92,6 +101,10 @@ struct BarTextureHandle(Handle<Image>);
 /// Marker for the energy vitality bar.
 #[derive(Component)]
 struct EnergyBar;
+
+/// Resource tracking the currently selected creature (clicked by user).
+#[derive(Resource, Default)]
+pub struct SelectedCreature(pub Option<CreatureId>);
 
 // ─── Spawn system ───────────────────────────────────────────────
 
@@ -180,6 +193,66 @@ fn spawn_creature_entity(
                 EnergyBar,
             ));
         });
+}
+
+// ─── Click-to-select system ─────────────────────────────────────
+
+/// System: detect left-click on a creature sprite to select it.
+fn creature_click_system(
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    camera_q: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    population: Option<Res<PopulationResource>>,
+    mut selected: ResMut<SelectedCreature>,
+    mut egui_contexts: EguiContexts,
+    tilemap_info: Option<Res<TilemapInfo>>,
+) {
+    if !mouse_button.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    // Don't select when clicking on egui panels
+    let ctx = egui_contexts.ctx_mut();
+    if ctx.is_using_pointer() || ctx.is_pointer_over_area() {
+        return;
+    }
+
+    let Some(population) = population else { return };
+    let Some(tilemap_info) = tilemap_info else {
+        return;
+    };
+
+    let window = windows.single();
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+    let (camera, camera_transform) = camera_q.single();
+    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+        return;
+    };
+
+    let grid_size = tilemap_info.grid_size;
+    let offset = tilemap_info.offset;
+
+    // Find the closest living creature to the click point
+    let mut best: Option<(CreatureId, f32)> = None;
+    for creature in &population.creatures {
+        if !creature.is_alive() {
+            continue;
+        }
+        let cpos = diamond_tile_to_world(
+            creature.position.x,
+            creature.position.y,
+            grid_size,
+            offset,
+        );
+        let dist = world_pos.distance(cpos);
+        if dist < CLICK_RADIUS && (best.is_none() || dist < best.unwrap().1) {
+            best = Some((creature.id, dist));
+        }
+    }
+
+    selected.0 = best.map(|(id, _)| id);
 }
 
 // ─── Sync system ────────────────────────────────────────────────

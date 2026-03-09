@@ -2,4 +2,4 @@
 
 mod camera_plugin;
 
-pub use camera_plugin::CameraPlugin;
+pub use camera_plugin::{CameraPlugin, MainCamera};
