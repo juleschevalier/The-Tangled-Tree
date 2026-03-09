@@ -1,5 +1,6 @@
 //! The world map — a 2D grid of tiles.
 
+use super::fruit_tree::FruitTree;
 use super::terrain::Terrain;
 use super::tile::Tile;
 use super::world_position::WorldPosition;
@@ -7,11 +8,14 @@ use super::world_position::WorldPosition;
 /// The world map is a rectangular grid of tiles.
 ///
 /// Tiles are stored in row-major order: `tiles[y * width + x]`.
+/// Trees are stored as a flat list keyed by grid position.
 #[derive(Debug, Clone)]
 pub struct WorldMap {
     width: u32,
     height: u32,
     tiles: Vec<Tile>,
+    /// Fruit trees placed in this world.
+    trees: Vec<FruitTree>,
 }
 
 impl WorldMap {
@@ -31,6 +35,7 @@ impl WorldMap {
             width,
             height,
             tiles,
+            trees: Vec::new(),
         }
     }
 
@@ -44,6 +49,7 @@ impl WorldMap {
             width,
             height,
             tiles,
+            trees: Vec::new(),
         }
     }
 
@@ -134,6 +140,45 @@ impl WorldMap {
         for tile in &mut self.tiles {
             tile.regenerate_grass(rate);
         }
+    }
+
+    // ── Fruit tree API ──────────────────────────────────────────────────────
+
+    /// Replace all trees with a new set (called by the world generator).
+    pub fn set_trees(&mut self, trees: Vec<FruitTree>) {
+        self.trees = trees;
+    }
+
+    /// Immutable slice of all trees.
+    #[must_use]
+    pub fn trees(&self) -> &[FruitTree] {
+        &self.trees
+    }
+
+    /// Mutable slice of all trees.
+    pub fn trees_mut(&mut self) -> &mut [FruitTree] {
+        &mut self.trees
+    }
+
+    /// Advance every tree's lifecycle by one tick.
+    pub fn tick_trees(&mut self) {
+        for tree in &mut self.trees {
+            tree.tick();
+        }
+    }
+
+    /// Attempt to harvest fruit from a tree at `pos`.
+    ///
+    /// Returns `true` if a Fruiting tree was found at that position and
+    /// its fruit was taken. Only the first Fruiting tree at the position
+    /// is harvested (typically at most one tree per tile).
+    pub fn harvest_fruit_at(&mut self, pos: WorldPosition) -> bool {
+        for tree in &mut self.trees {
+            if tree.position == pos {
+                return tree.harvest();
+            }
+        }
+        false
     }
 
     /// Convert a position to a flat index.

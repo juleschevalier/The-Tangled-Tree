@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use crate::adapters::renderer::TilemapRendererPlugin;
 use crate::adapters::renderer::creature_renderer::{CreatureRendererPlugin, WorldConfigResource};
 use crate::adapters::renderer::tilemap_renderer::WorldMapResource;
+use crate::adapters::renderer::tree_renderer::TreeRendererPlugin;
 use crate::adapters::stats_reporter::StatsHudPlugin;
 use crate::adapters::world_generator::PerlinWorldGenerator;
 use crate::plugins::camera::CameraPlugin;
@@ -41,6 +42,7 @@ impl Plugin for TangledPlugin {
         // Register sub-plugins
         app.add_plugins(TilemapRendererPlugin)
             .add_plugins(CreatureRendererPlugin)
+            .add_plugins(TreeRendererPlugin)
             .add_plugins(SimulationPlugin)
             .add_plugins(StatsHudPlugin)
             .add_plugins(CameraPlugin);

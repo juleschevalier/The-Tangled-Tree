@@ -1,8 +1,15 @@
 //! Perlin noise world generator — implements the WorldGenerator port.
 
+use bevy::log::info;
 use noise::{NoiseFn, Perlin};
-use tangled_core::domain::world::{Terrain, Tile, WorldConfig, WorldMap};
+use tangled_core::domain::world::{FruitTree, Terrain, Tile, WorldConfig, WorldMap, WorldPosition};
 use tangled_core::ports::outbound::WorldGenerator;
+
+/// Probability (0.0–1.0) that a Dirt tile receives a fruit tree.
+/// Deterministic hash-based placement — more predictable than a noise threshold
+/// (Perlin amplitude is ~±0.70, so a threshold > 0.85 is never reached).
+/// 0.05 ≈ 5% of Dirt tiles → ~80 trees on a 64×64 map with ~40% Dirt.
+const TREE_DENSITY: f64 = 0.05;
 
 /// World generator using Perlin noise for terrain elevation.
 ///
@@ -31,8 +38,8 @@ impl WorldGenerator for PerlinWorldGenerator {
         let terrain_noise = Perlin::new(config.seed as u32);
         // Second noise layer with different seed for grass distribution
         let grass_noise = Perlin::new(config.seed.wrapping_add(12345) as u32);
-
         let mut tiles = Vec::with_capacity((config.width * config.height) as usize);
+        let mut trees: Vec<FruitTree> = Vec::new();
 
         for y in 0..config.height {
             for x in 0..config.width {
@@ -60,11 +67,36 @@ impl WorldGenerator for PerlinWorldGenerator {
                     Tile::new(terrain, elevation)
                 };
 
+                // Place a fruit tree on ~TREE_DENSITY fraction of Dirt tiles.
+                // Uses splitmix64 finalizer for uniform distribution even with
+                // small (x, y) inputs — the previous wrapping_mul approach kept
+                // all energy in the lower bits, making >> 32 always near zero.
+                if terrain == Terrain::Dirt {
+                    let mut h = config.seed ^ ((x as u64) << 32 | y as u64);
+                    h = (h ^ (h >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+                    h = (h ^ (h >> 27)).wrapping_mul(0x94d049bb133111eb);
+                    h ^= h >> 31;
+                    let fraction = (h % 10_000) as f64 / 10_000.0;
+                    if fraction < TREE_DENSITY {
+                        // Spread initial lifecycle phase across the cycle
+                        let offset = x.wrapping_mul(317).wrapping_add(y.wrapping_mul(521));
+                        trees.push(FruitTree::new_with_offset(WorldPosition::new(x, y), offset));
+                    }
+                }
+
                 tiles.push(tile);
             }
         }
 
-        WorldMap::new(config.width, config.height, tiles)
+        let mut world_map = WorldMap::new(config.width, config.height, tiles);
+        info!(
+            "Placed {} fruit trees on {} Dirt tiles ({:.1}% density)",
+            trees.len(),
+            world_map.count_terrain(Terrain::Dirt),
+            trees.len() as f64 / world_map.count_terrain(Terrain::Dirt).max(1) as f64 * 100.0,
+        );
+        world_map.set_trees(trees);
+        world_map
     }
 }
 

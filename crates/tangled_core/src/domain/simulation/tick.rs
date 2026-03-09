@@ -6,6 +6,16 @@ use crate::domain::world::WorldMap;
 
 use super::movement;
 
+/// How much energy grass feeds the creature per unit consumed.
+///
+/// Intentionally moderate — grass sustains creatures but is not enough on its
+/// own. Fruit trees deliver the large bursts needed to thrive long-term.
+const GRASS_FEED_MULTIPLIER: f32 = 10.0;
+
+/// Energy delivered to a creature that harvests fruit from a tree.
+/// This is a large, immediate boost that significantly reduces hunger.
+const FRUIT_FEED_ENERGY: f32 = 60.0;
+
 /// A single event that occurred during a tick.
 #[derive(Debug, Clone)]
 pub enum SimulationEvent {
@@ -66,14 +76,19 @@ impl SimulationTick {
         // 1. Move — creatures decide where to go
         movement::move_all_creatures(creatures, world_map, current_tick);
 
-        // 2. Feed — each living creature eats grass from its tile
+        // 2. Feed — each living creature eats grass from its tile, and harvests
+        //    fruit from any tree at the same position.
         for creature in creatures.iter_mut() {
             if !creature.is_alive() {
                 continue;
             }
             if let Some(tile) = world_map.get_mut(creature.position) {
                 let consumed = tile.consume_grass(0.3);
-                creature.feed(consumed as f32 * 30.0);
+                creature.feed(consumed as f32 * GRASS_FEED_MULTIPLIER);
+            }
+            // Check for a fruiting tree on the same tile
+            if world_map.harvest_fruit_at(creature.position) {
+                creature.feed(FRUIT_FEED_ENERGY);
             }
         }
 
@@ -108,6 +123,9 @@ impl SimulationTick {
 
         // 5. Regenerate grass on all tiles
         world_map.regenerate_all_grass(grass_regen_rate);
+
+        // 6. Advance all fruit trees by one tick
+        world_map.tick_trees();
 
         // Record birth events
         for child in &births {
